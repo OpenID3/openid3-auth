@@ -17,14 +17,15 @@
   "main": "lib/index.js",
   "dependencies": {
     "@google-cloud/kms": "^3.1.0",
-    "@openid3/contracts": "^0.0.1",
     "@noble/curves": "^1.2.0",
+    "@openid3/contracts": "^0.0.1",
     "@types/node": "^18.11.18",
     "@types/node-fetch": "^2.6.2",
     "@types/nodemailer": "^6.4.5",
     "@typescript-eslint/eslint-plugin": "^5.53.0",
     "asn1.js": "^5.4.1",
     "base64url": "^3.0.1",
+    "bn.js": "^5.2.1",
     "cors": "^2.8.5",
     "cross-fetch": "^3.1.5",
     "crypto": "^1.0.1",
@@ -35,6 +36,7 @@
     "firebase-functions": "^4.4.1"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.1.4",
     "@types/chai": "^4.3.6",
     "@types/cors": "^2.8.13",
     "@types/mocha": "^10.0.2",
