@@ -1,0 +1,50 @@
+{
+  "name": "@openid3/auth",
+  "scripts": {
+    "lint": "eslint --ext .js,.ts .",
+    "build-deps": "cd common && npm run build && cd ../redpacket && npm run build && cd ..",
+    "build": "rimraf lib && npm run lint && tsc",
+    "build-all": "rimraf lib && npm run build-deps && npm run lint && tsc",
+    "build:watch": "tsc --watch",
+    "serve": "CLOUD_RUNTIME_CONFIG=\"$(doppler secrets download --no-file | jq '{doppler: .}')\" firebase emulators:start --only functions,auth",
+    "shell": "CLOUD_RUNTIME_CONFIG=\"$(doppler secrets download --no-file | jq '{doppler: .}')\" firebase functions:shell",
+    "start": "npm run shell",
+    "secrets-sync": "firebase functions:config:unset doppler && firebase functions:config:set doppler=\"$(doppler secrets download --config stg --no-file)\"",
+    "deploy": "npm run secrets-sync && firebase deploy --only functions",
+    "logs": "firebase functions:log",
+    "test": "mocha --reporter spec"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "@google-cloud/kms": "^3.1.0",
+    "@openid3/contracts": "^0.0.1",
+    "@noble/curves": "^1.2.0",
+    "@types/node": "^18.11.18",
+    "@types/node-fetch": "^2.6.2",
+    "@types/nodemailer": "^6.4.5",
+    "@typescript-eslint/eslint-plugin": "^5.53.0",
+    "asn1.js": "^5.4.1",
+    "base64url": "^3.0.1",
+    "cors": "^2.8.5",
+    "cross-fetch": "^3.1.5",
+    "crypto": "^1.0.1",
+    "eccrypto": "^1.1.6",
+    "ethers": "^6.7.1",
+    "fast-crc32c": "^2.0.0",
+    "firebase-admin": "^11.4.1",
+    "firebase-functions": "^4.4.1"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.6",
+    "@types/cors": "^2.8.13",
+    "@types/mocha": "^10.0.2",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-import": "^2.25.4",
+    "firebase-functions-test": "^0.2.3",
+    "mocha": "^10.2.0",
+    "typescript": "^4.9.5"
+  },
+  "private": true
+}
