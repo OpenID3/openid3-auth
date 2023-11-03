@@ -1,9 +1,4 @@
-import {ethers} from "ethers";
 import * as functions from "firebase-functions";
-
-export const hash = (message: string) => {
-  return ethers.keccak256(ethers.toUtf8Bytes(message));
-};
 
 export const epoch = () => {
   return Math.floor(new Date().getTime() / 1000);

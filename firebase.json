@@ -34,8 +34,5 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
-  },
-  "extensions": {
-    "firebase-web-authn": "./node_modules/@firebase-web-authn/extension"
   }
 }
