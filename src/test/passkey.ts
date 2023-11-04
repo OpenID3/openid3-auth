@@ -2,8 +2,7 @@ import { secp256r1 } from "@noble/curves/p256";
 import crypto from "crypto";
 
 export const genPasskey = (): any => {
-    // const privKey = secp256r1.utils.randomPrivateKey();
-    const privKey = Buffer.from("d6988c4f34d49d49818a312c706ef9104de0bebd8a10614aa7708681e6f25dd7", "hex");
+    const privKey = secp256r1.utils.randomPrivateKey();
     const pubKey = secp256r1.getPublicKey(privKey);
     return { privKey, pubKey };
 }

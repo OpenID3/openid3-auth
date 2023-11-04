@@ -11,8 +11,7 @@ export interface Key {
 }
 
 export const genEciesKey = () => {
-  // const privKey = eccrypto.generatePrivate();
-  const privKey = PrivateKey.fromHex("bfa4a75f88092e91945413e18103e6564d03c15d95df4020b015f61221ff7048");
+  const privKey = new PrivateKey();
   return {
     privKey,
     pubKey: privKey.publicKey.toHex(),
