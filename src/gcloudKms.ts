@@ -2,9 +2,11 @@
 import * as kms from "@google-cloud/kms";
 import * as crc32c from "fast-crc32c";
 import * as functions from "firebase-functions";
+import crypto from "crypto";
 
 const secrets = functions.config().doppler;
 const client = new kms.KeyManagementServiceClient();
+const DEV_ENC_ALGORITHM = "aes-256-cbc";
 
 const encryptorConfig = () => ({
   projectId: secrets.FIREBASE_PROJECT_ID,
@@ -22,7 +24,26 @@ const getSymmKeyName = async function() {
       config.keyId);
 };
 
+const encryptWithDevKey = (plaintext: string) => {
+  const key = Buffer.from(secrets.DEV_KEY, "hex");
+  const cipher = crypto.createCipheriv(DEV_ENC_ALGORITHM, key, null);
+  let encrypted = cipher.update(plaintext);
+  return Buffer.concat([encrypted, cipher.final()]).toString("base64");
+}
+
+const decryptWithDevKey = (text: string) => {
+  const ciphertext = Buffer.from(text, "base64");
+  const key = Buffer.from(secrets.DEV_KEY, "hex");
+  let decipher = crypto.createDecipheriv('aes-256-cbc', key, null);
+  let decrypted = decipher.update(ciphertext);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString('utf-8');
+}
+
 export const encryptWithSymmKey = async function(plaintext: string) {
+  if (secrets.ENV === "dev") {
+    return encryptWithDevKey(plaintext);
+  }
   const plaintextBuffer = Buffer.from(plaintext);
   const keyName = await getSymmKeyName();
   const plaintextCrc32c = crc32c.calculate(plaintextBuffer);
@@ -48,10 +69,12 @@ export const encryptWithSymmKey = async function(plaintext: string) {
 };
 
 export const decryptWithSymmKey = async function(text: string) {
+  if (secrets.ENV === "dev") {
+    return decryptWithDevKey(text);
+  }
   const ciphertext = Buffer.from(text, "base64");
   const keyName = await getSymmKeyName();
   const ciphertextCrc32c = crc32c.calculate(ciphertext);
-
   const [decryptResponse] = await client.decrypt({
     name: keyName,
     ciphertext: ciphertext,

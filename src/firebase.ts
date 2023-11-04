@@ -1,5 +1,9 @@
 import * as admin from "firebase-admin";
+import { initializeFirestore } from "firebase-admin/firestore";
+import * as functions from "firebase-functions";
+
 admin.initializeApp();
+const secrets = functions.config().doppler || {};
 
 export class PrivateFirebase {
   app : admin.app.App;
@@ -10,7 +14,11 @@ export class PrivateFirebase {
 
   constructor() {
     this.app = admin.app();
-    this.db = admin.firestore();
+    if (secrets.ENV === "dev") {
+      this.db = initializeFirestore(this.app, {}, "test");
+    } else {
+      this.db = admin.firestore();
+    }
     this.storage = admin.storage();
     this.database = admin.database();
     this.auth = admin.auth();

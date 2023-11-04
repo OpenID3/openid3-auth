@@ -44,11 +44,13 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.passkey,
       );
       await firebase.auth.createUser({uid: req.body.uid});
-      const dek = crypto.randomBytes(32).toString("hex");
-      const encryptedDek = ecccrypto.encrypt(req.body.kek, Buffer.from(dek));
+      const newDek = crypto.randomBytes(32).toString("hex");
+      const newDekClientEncrypted = ecccrypto.encrypt(
+        req.body.kek, Buffer.from(newDek));
+      const newDekServerEncrypted = await encryptWithSymmKey(newDek);
       await firebase.db.collection("users").doc(req.body.uid).set({
         passkey: req.body.passkey,
-        dek: await encryptWithSymmKey(dek),
+        deks: [newDekServerEncrypted],
         createdAt: new Timestamp(epoch(), 0),
         loginStatus: {
           challenge: "",
@@ -56,14 +58,14 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         },
       });
       const token = firebase.auth.createCustomToken(req.body.uid);
-      res.status(200).json({token: token, dek: encryptedDek});
+      res.status(200).json({token: token, dek: newDekClientEncrypted});
     } catch (err: unknown) {
       handleError(res, err);
     }
   });
 });
 
-export const getChallenge = functions.https.onRequest((req, res) => {
+export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
       const firebase = Firebase.getInstance();
@@ -74,14 +76,19 @@ export const getChallenge = functions.https.onRequest((req, res) => {
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
-      const challenge = crypto.randomBytes(32).toString("hex");
-      await firebase.db.collection("users").doc(req.body.uid).update({
-        loginStatus: {
-          challenge: challenge,
-          updatedAt: new Timestamp(epoch(), 0),
-        },
-      });
-      res.status(200).json({challege: challenge});
+      if (user.loginStatus.step === "challenge"
+        && user.loginStatus.updatedAt.seconds +180 > epoch()) {
+        res.status(200).json({challenge: user.loginStatus.challenge});
+      } else {
+        const challenge = crypto.randomBytes(32).toString("hex");
+        await firebase.db.collection("users").doc(req.body.uid).update({
+          loginStatus: {
+            challenge: challenge,
+            updatedAt: new Timestamp(epoch(), 0),
+          },
+        });
+        res.status(200).json({challenge});
+      }
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -127,7 +134,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
   });
 });
 
-export const getEncryptionKey = functions.https.onRequest((req, res) => {
+export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
       const firebase = Firebase.getInstance();
@@ -136,15 +143,27 @@ export const getEncryptionKey = functions.https.onRequest((req, res) => {
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
-      const currentDek = await decryptWithSymmKey(user.dek);
-      const dek = ecccrypto.encrypt(req.body.kek, Buffer.from(currentDek));
-      // rotate dek
-      const newDek = crypto.randomBytes(32).toString("hex");
-      const nextDek = ecccrypto.encrypt(req.body.kek, Buffer.from(newDek));
-      await firebase.db.collection("users").doc(decoded.uid).update({
-        dek: await encryptWithSymmKey(newDek),
-      });
-      res.status(200).json({dek, nextDek});
+      for (const dekServerEncrypted of user.deks) {
+        const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
+        const dekClientEncrypted = ecccrypto.encrypt(
+          req.body.kek, Buffer.from(decryptedDek));
+        const keyId = crypto.createHash(decryptedDek).update("sha256").digest("hex");
+        if (keyId === req.body.keyId) {
+          const newDek = crypto.randomBytes(32).toString("hex");
+          const newDekServerEncrypted = await encryptWithSymmKey(newDek);
+          const newDekClientEncrypted = ecccrypto.encrypt(
+            req.body.kek, Buffer.from(newDek));
+          await firebase.db.collection("users").doc(decoded.uid).update({
+            deks: [dekServerEncrypted, newDekServerEncrypted],
+          });
+          res.status(200).json({
+            dek: dekClientEncrypted,
+            newDek: newDekClientEncrypted
+          });
+          return;
+        }
+      }
+      throw new HexlinkError(404, "Key not found");
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -204,7 +223,7 @@ const validatePasskeySignature = (
 interface User {
     passkey: string; // public key of passkey
     kek: string, // stored at client side to decrypt the dek from server
-    dek: string, // stored at server side
+    deks: string[], // stored at server side
     loginStatus: {
         step: "challenge" | "loggedin" | "loggedout",
         challenge: string,

@@ -5,7 +5,7 @@ const txServiceRateDBRef = "functions/rates/";
 const timestampKey = "timestamp";
 
 export async function registerRateLimit(ip: string) {
-  return await rateLimiter("sign_up", `ip_${ip}`, 60, 3);
+  return await rateLimiter("sign_up", `ip_${ip}`, 60, 10);
 }
 
 export async function getChallengeRateLimit(ip: string) {
