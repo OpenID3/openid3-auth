@@ -5,25 +5,41 @@ import {
   handleError,
 } from "./utils";
 import * as functions from "firebase-functions";
-import {Firebase} from "./firebase";
-import {Firestore, Timestamp} from "firebase-admin/firestore";
+import * as admin from "firebase-admin";
+import { getFirestore, Timestamp} from "firebase-admin/firestore";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import crypto from "crypto";
 import {secp256r1} from "@noble/curves/p256";
-import ecccrypto from "eccrypto";
-import {ethers} from "ethers";
+import eccrypto from "eccrypto";
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
 
 const secrets = functions.config().doppler || {};
+const firestore = () => {
+  return getFirestore(admin.app(), "test");
+}
 
+/**
+ * req.body: {
+ *  uid: string,
+ *  passkey: string, // hex
+ *  kek: string, // hex
+ *  clientDataJson: string,
+ *  authData: string, // hex
+ *  signature: string, // hex
+ * }
+ * 
+ * res: {
+ *   token: string,
+ *   dek: string, // base64
+ * }
+ */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
-  cors({origin: true})(req, res, async () => {
+  return cors({origin: true})(req, res, async () => {
     try {
-      const firebase = Firebase.getInstance();
       if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const user = await getUser(firebase.db, req.body.uid);
+      const user = await getUser(req.body.uid);
       if (user != null) {
         throw new HexlinkError(400, "User already exists");
       }
@@ -37,18 +53,18 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.clientDataJson,
           [
             ["challenge", challenge],
-            ["origin", "https://dev.hexlink.io"],
+            ["origin", "https://openid3.org"],
           ],
           req.body.authData,
           req.body.signature,
           req.body.passkey,
       );
-      await firebase.auth.createUser({uid: req.body.uid});
+      await admin.auth().createUser({uid: req.body.uid});
       const newDek = crypto.randomBytes(32).toString("hex");
-      const newDekClientEncrypted = ecccrypto.encrypt(
+      const newDekClientEncrypted = eccrypto.encrypt(
         req.body.kek, Buffer.from(newDek));
       const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-      await firebase.db.collection("users").doc(req.body.uid).set({
+      await firestore().collection("users").doc(req.body.uid).set({
         passkey: req.body.passkey,
         deks: [newDekServerEncrypted],
         createdAt: new Timestamp(epoch(), 0),
@@ -57,7 +73,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           updatedAt: new Timestamp(epoch(), 0),
         },
       });
-      const token = firebase.auth.createCustomToken(req.body.uid);
+      const token = await admin.auth().createCustomToken(req.body.uid);
       res.status(200).json({token: token, dek: newDekClientEncrypted});
     } catch (err: unknown) {
       handleError(res, err);
@@ -68,11 +84,10 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
 export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
-      const firebase = Firebase.getInstance();
       if (secrets.ENV !== "dev" && await getChallengeRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const user = await getUser(firebase.db, req.body.uid);
+      const user = await getUser(req.body.uid);
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
@@ -81,7 +96,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
         res.status(200).json({challenge: user.loginStatus.challenge});
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
-        await firebase.db.collection("users").doc(req.body.uid).update({
+        await firestore().collection("users").doc(req.body.uid).update({
           loginStatus: {
             challenge: challenge,
             updatedAt: new Timestamp(epoch(), 0),
@@ -98,8 +113,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
-      const firebase = Firebase.getInstance();
-      const user = await getUser(firebase.db, req.body.uid);
+      const user = await getUser(req.body.uid);
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
@@ -120,13 +134,13 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           req.body.signature,
           user.passkey,
       );
-      await firebase.db.collection("users").doc(req.body.uid).update({
+      await firestore().collection("users").doc(req.body.uid).update({
         loginStatus: {
           challenge: "",
           updatedAt: new Timestamp(epoch(), 0),
         },
       });
-      const token = firebase.auth.createCustomToken(req.body.uid);
+      const token = admin.auth().createCustomToken(req.body.uid);
       res.status(200).json({token: token});
     } catch (err: unknown) {
       handleError(res, err);
@@ -137,23 +151,22 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
 export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
-      const firebase = Firebase.getInstance();
-      const decoded = await firebase.auth.verifyIdToken(extractIdToken(req));
-      const user = await getUser(firebase.db, decoded.uid);
+      const decoded = await admin.auth().verifyIdToken(extractIdToken(req));
+      const user = await getUser(decoded.uid);
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
       for (const dekServerEncrypted of user.deks) {
         const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
-        const dekClientEncrypted = ecccrypto.encrypt(
+        const dekClientEncrypted = eccrypto.encrypt(
           req.body.kek, Buffer.from(decryptedDek));
         const keyId = crypto.createHash(decryptedDek).update("sha256").digest("hex");
         if (keyId === req.body.keyId) {
           const newDek = crypto.randomBytes(32).toString("hex");
           const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-          const newDekClientEncrypted = ecccrypto.encrypt(
+          const newDekClientEncrypted = eccrypto.encrypt(
             req.body.kek, Buffer.from(newDek));
-          await firebase.db.collection("users").doc(decoded.uid).update({
+          await firestore().collection("users").doc(decoded.uid).update({
             deks: [dekServerEncrypted, newDekServerEncrypted],
           });
           res.status(200).json({
@@ -205,13 +218,13 @@ const validatePasskeySignature = (
   }
   const clientDataHash = crypto.createHash("sha256")
       .update(clientDataJson)
-      .digest("hex");
-  const signedDataHex = ethers.solidityPacked(
-      ["bytes", "bytes32"],
-      [authData, "0x" + clientDataHash]
-  );
+      .digest();
+  const signedData = Buffer.concat([
+    Buffer.from(authData, "hex"),
+    clientDataHash,
+  ]);
   const signedDataHash = crypto.createHash("sha256")
-      .update(ethers.getBytes(signedDataHex))
+      .update(signedData)
       .digest("hex");
   if (!secp256r1.verify(signature, signedDataHash, pubKey)) {
     throw new HexlinkError(403, "Invalid signature");
@@ -233,10 +246,11 @@ interface User {
 }
 
 async function getUser(
-    db: Firestore,
     uid: string,
 ) : Promise<User | null> {
-  const result = await db.collection("users").doc(uid).get();
+  console.log("getting user 1");
+  const result = await firestore().collection("users").doc(uid).get();
+  console.log("getting user 2");
   if (result && result.exists) {
     return result.data() as User;
   }

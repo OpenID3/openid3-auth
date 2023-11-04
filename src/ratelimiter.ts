@@ -1,4 +1,3 @@
-import {Firebase} from "./firebase";
 import * as admin from "firebase-admin";
 
 const txServiceRateDBRef = "functions/rates/";
@@ -19,8 +18,7 @@ export const rateLimiter = async (
     threshold: number
 ) : Promise<boolean> => {
   const callRef = txServiceRateDBRef + callName;
-  const db = Firebase.getInstance().database;
-  const ref = db.ref(callRef);
+  const ref = admin.database().ref(callRef);
   const id = rawId.replace(/\/|\.|#|$/g, ":");
 
   const now = Date.now();
