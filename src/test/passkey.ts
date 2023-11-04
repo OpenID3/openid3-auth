@@ -12,7 +12,6 @@ export const signWithPasskey = (data: any, passkey: any) => {
     const challenge = crypto.createHash("sha256").update(
         JSON.stringify(data)
     ).digest("hex");
-    console.log("challenge", challenge);
     const clientDataJson = JSON.stringify({
         challenge: challenge,
         origin: "https://openid3.org",
@@ -33,7 +32,6 @@ export const signWithPasskey = (data: any, passkey: any) => {
     const signedDataHash = crypto.createHash("sha256")
         .update(signedData)
         .digest("hex");
-    console.log("signedDataHash", signedDataHash);
     const signature = secp256r1.sign(signedDataHash, passkey.privKey);
     return {
         clientDataJson,

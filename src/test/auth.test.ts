@@ -2,6 +2,7 @@ import assert from "assert";
 import ftest from "firebase-functions-test";
 import { PrivateKey } from 'eciesjs'
 import * as admin from "firebase-admin";
+import crypto from "crypto";
 import { genPasskey, signRegisterRequest } from "./passkey";
 
 export interface Key {
@@ -18,16 +19,18 @@ export const genEciesKey = () => {
   }
 }
 
-const testEnv = ftest({
-  databaseURL: process.env.FIREBASE_DATABASE_URL,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-}, process.env.SERVICE_ACCOUNT_KEY_PATH);
-testEnv.mockConfig({ doppler: { ENV: "dev" } });
-admin.initializeApp();
+const testEnv = ftest();
+testEnv.mockConfig({ doppler: {
+  ENV: "dev",
+  DEV_KEY: crypto.randomBytes(32).toString("hex"),
+  DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
+} });
+admin.initializeApp({projectId: "test"});
 
 // import after testEnv is setup and properly mocked
 // otherwise the env won't inject into the functions
-import { registerUserWithPasskey } from "../auth"
+import * as auth from "../auth";
+import * as user from "../user";
 
 describe('registerPasskey', () => {
   let passkey: Key;
@@ -61,19 +64,25 @@ describe('registerPasskey', () => {
         signature: signature.toCompactHex(),
       }
     };
-    console.log(req.body);
     const res = {
       setHeader: () => {},
       getHeader: () => {},
       status: (status: number) => {
         assert.equal(status, 200);
-      },
-      json: (response: any) => {
-        console.log(response);
-        expect(response).toBe({});
-        done();
+        return {
+          json: (response: any) => {
+            expect(response).toHaveProperty("dek");
+            expect(response).toHaveProperty("token");
+            done();
+          },
+        };
       },
     };
-    registerUserWithPasskey(req as any, res as any);
+
+    jest.spyOn(user, "getUser").mockImplementation(
+      () => Promise.resolve(null));
+    jest.spyOn(user, "createUser").mockImplementation(
+      () => Promise.resolve());
+    auth.registerUserWithPasskey(req as any, res as any);
   });
 });

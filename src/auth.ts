@@ -1,30 +1,20 @@
 import cors from "cors";
+import * as functions from "firebase-functions";
+import * as admin from "firebase-admin";
+import crypto from "crypto";
+import {secp256r1} from "@noble/curves/p256";
+import { encrypt } from 'eciesjs'
+
 import {
   HexlinkError,
   epoch,
   handleError,
 } from "./utils";
-import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
-import { Timestamp} from "firebase-admin/firestore";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
-import crypto from "crypto";
-import {secp256r1} from "@noble/curves/p256";
-import { encrypt } from 'eciesjs'
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
+import { createUser, getUser, postAuth, preAuth, rotateDek } from "./user";
 
 const secrets = functions.config().doppler || {};
-const firestore = () => {
-  return admin.firestore();
-}
-
-const tryCreateUser = async (uid: string) => {
-  try {
-    await admin.auth().getUser(uid);
-  } catch(err) {
-    await admin.auth().createUser({uid});
-  }
-}
 
 /**
  * req.body: {
@@ -70,16 +60,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       const newDek = crypto.randomBytes(32).toString("hex");
       const newDekClientEncrypted = encrypt(req.body.kek, Buffer.from(newDek));
       const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-      await firestore().collection("users").doc(req.body.uid).set({
-        passkey: req.body.passkey,
-        deks: [newDekServerEncrypted],
-        createdAt: new Timestamp(epoch(), 0),
-        loginStatus: {
-          challenge: "",
-          updatedAt: new Timestamp(epoch(), 0),
-        },
-      });
-      await tryCreateUser(req.body.uid);
+      await createUser(req.body.uid, req.body.passkey, newDekServerEncrypted);
       const token = await admin.auth().createCustomToken(req.body.uid);
       res.status(200).json({token: token, dek: newDekClientEncrypted.toString("hex")});
     } catch (err: unknown) {
@@ -103,12 +84,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
         res.status(200).json({challenge: user.loginStatus.challenge});
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
-        await firestore().collection("users").doc(req.body.uid).update({
-          loginStatus: {
-            challenge: challenge,
-            updatedAt: new Timestamp(epoch(), 0),
-          },
-        });
+        await preAuth(req.body.uid, challenge);
         res.status(200).json({challenge});
       }
     } catch (err: unknown) {
@@ -141,12 +117,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           req.body.signature,
           user.passkey,
       );
-      await firestore().collection("users").doc(req.body.uid).update({
-        loginStatus: {
-          challenge: "",
-          updatedAt: new Timestamp(epoch(), 0),
-        },
-      });
+      await postAuth(req.body.uid);
       const token = admin.auth().createCustomToken(req.body.uid);
       res.status(200).json({token: token});
     } catch (err: unknown) {
@@ -173,9 +144,7 @@ export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
           const newDekServerEncrypted = await encryptWithSymmKey(newDek);
           const newDekClientEncrypted = encrypt(
             req.body.kek, Buffer.from(newDek));
-          await firestore().collection("users").doc(decoded.uid).update({
-            deks: [dekServerEncrypted, newDekServerEncrypted],
-          });
+          await rotateDek(decoded.uid, dekServerEncrypted, newDekServerEncrypted);
           res.status(200).json({
             dek: dekClientEncrypted.toString("hex"),
             newDek: newDekClientEncrypted.toString("hex")
@@ -237,27 +206,3 @@ const validatePasskeySignature = (
     throw new HexlinkError(403, "Invalid signature");
   }
 };
-
-/* Database */
-
-interface User {
-    passkey: string; // public key of passkey
-    kek: string, // stored at client side to decrypt the dek from server
-    deks: string[], // stored at server side
-    loginStatus: {
-        step: "challenge" | "loggedin" | "loggedout",
-        challenge: string,
-        updatedAt: Timestamp,
-    }
-    createdAt: Timestamp;
-}
-
-async function getUser(
-    uid: string,
-) : Promise<User | null> {
-  const result = await firestore().collection("users").doc(uid).get();
-  if (result && result.exists) {
-    return result.data() as User;
-  }
-  return null;
-}

@@ -1,4 +1,8 @@
-00:44:18.821 [NamespaceSystem-akka.actor.default-dispatcher-6] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
-00:44:19.180 [main] INFO com.firebase.server.forge.App$ - Listening at 127.0.0.1:9000
-00:44:27.054 [NamespaceSystem-akka.actor.default-dispatcher-6] INFO com.firebase.core.namespace.NamespaceActor - openid3-bbd1b-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 113ms, init: 0ms
-00:44:27.139 [NamespaceSystem-blocking-namespace-operation-dispatcher-8] INFO com.firebase.core.namespace.StateManager - Namespace openid3-bbd1b-default-rtdb status Active to Active
+09:42:44.528 [NamespaceSystem-akka.actor.default-dispatcher-5] INFO akka.event.slf4j.Slf4jLogger - Slf4jLogger started
+09:42:44.919 [main] INFO com.firebase.server.forge.App$ - Listening at 127.0.0.1:9000
+09:42:52.473 [NamespaceSystem-akka.actor.default-dispatcher-5] INFO com.firebase.core.namespace.NamespaceActor - openid3-bbd1b-default-rtdb successfully activated FBKV (SurveyIdle(0)) wait: 110ms, init: 0ms
+09:42:52.536 [NamespaceSystem-blocking-namespace-operation-dispatcher-7] INFO com.firebase.core.namespace.StateManager - Namespace openid3-bbd1b-default-rtdb status Active to Active
+09:43:15.668 [Thread-0] INFO com.firebase.server.forge.App$ - Attempting graceful shutdown.
+09:43:15.682 [NamespaceSystem-akka.actor.default-dispatcher-6] INFO com.firebase.core.namespace.Terminator$Terminator - 1 actors left to terminate: openid3-bbd1b-default-rtdb
+09:43:15.689 [NamespaceSystem-akka.actor.default-dispatcher-9] INFO com.firebase.core.namespace.NamespaceActor - stopped namespace actor for openid3-bbd1b-default-rtdb
+09:43:15.692 [Thread-0] INFO com.firebase.server.forge.App$ - Graceful shutdown complete.
