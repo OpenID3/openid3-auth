@@ -6,16 +6,24 @@ import {
 } from "./utils";
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
-import { getFirestore, Timestamp} from "firebase-admin/firestore";
+import { Timestamp} from "firebase-admin/firestore";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import crypto from "crypto";
 import {secp256r1} from "@noble/curves/p256";
-import eccrypto from "eccrypto";
+import { encrypt } from 'eciesjs'
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
 
 const secrets = functions.config().doppler || {};
 const firestore = () => {
-  return getFirestore(admin.app(), "test");
+  return admin.firestore();
+}
+
+const tryCreateUser = async (uid: string) => {
+  try {
+    await admin.auth().getUser(uid);
+  } catch(err) {
+    await admin.auth().createUser({uid});
+  }
 }
 
 /**
@@ -59,10 +67,8 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.signature,
           req.body.passkey,
       );
-      await admin.auth().createUser({uid: req.body.uid});
       const newDek = crypto.randomBytes(32).toString("hex");
-      const newDekClientEncrypted = eccrypto.encrypt(
-        req.body.kek, Buffer.from(newDek));
+      const newDekClientEncrypted = encrypt(req.body.kek, Buffer.from(newDek));
       const newDekServerEncrypted = await encryptWithSymmKey(newDek);
       await firestore().collection("users").doc(req.body.uid).set({
         passkey: req.body.passkey,
@@ -73,8 +79,9 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           updatedAt: new Timestamp(epoch(), 0),
         },
       });
+      await tryCreateUser(req.body.uid);
       const token = await admin.auth().createCustomToken(req.body.uid);
-      res.status(200).json({token: token, dek: newDekClientEncrypted});
+      res.status(200).json({token: token, dek: newDekClientEncrypted.toString("hex")});
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -158,20 +165,20 @@ export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
       }
       for (const dekServerEncrypted of user.deks) {
         const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
-        const dekClientEncrypted = eccrypto.encrypt(
+        const dekClientEncrypted = encrypt(
           req.body.kek, Buffer.from(decryptedDek));
         const keyId = crypto.createHash(decryptedDek).update("sha256").digest("hex");
         if (keyId === req.body.keyId) {
           const newDek = crypto.randomBytes(32).toString("hex");
           const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-          const newDekClientEncrypted = eccrypto.encrypt(
+          const newDekClientEncrypted = encrypt(
             req.body.kek, Buffer.from(newDek));
           await firestore().collection("users").doc(decoded.uid).update({
             deks: [dekServerEncrypted, newDekServerEncrypted],
           });
           res.status(200).json({
-            dek: dekClientEncrypted,
-            newDek: newDekClientEncrypted
+            dek: dekClientEncrypted.toString("hex"),
+            newDek: newDekClientEncrypted.toString("hex")
           });
           return;
         }
@@ -226,7 +233,7 @@ const validatePasskeySignature = (
   const signedDataHash = crypto.createHash("sha256")
       .update(signedData)
       .digest("hex");
-  if (!secp256r1.verify(signature, signedDataHash, pubKey)) {
+  if (!secp256r1.verify(Buffer.from(signature, "hex"), signedDataHash, pubKey)) {
     throw new HexlinkError(403, "Invalid signature");
   }
 };
@@ -248,9 +255,7 @@ interface User {
 async function getUser(
     uid: string,
 ) : Promise<User | null> {
-  console.log("getting user 1");
   const result = await firestore().collection("users").doc(uid).get();
-  console.log("getting user 2");
   if (result && result.exists) {
     return result.data() as User;
   }

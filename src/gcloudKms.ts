@@ -26,7 +26,8 @@ const getSymmKeyName = async function() {
 
 const encryptWithDevKey = (plaintext: string) => {
   const key = Buffer.from(secrets.DEV_KEY, "hex");
-  const cipher = crypto.createCipheriv(DEV_ENC_ALGORITHM, key, null);
+  const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
+  const cipher = crypto.createCipheriv(DEV_ENC_ALGORITHM, key, iv);
   let encrypted = cipher.update(plaintext);
   return Buffer.concat([encrypted, cipher.final()]).toString("base64");
 }
@@ -34,7 +35,8 @@ const encryptWithDevKey = (plaintext: string) => {
 const decryptWithDevKey = (text: string) => {
   const ciphertext = Buffer.from(text, "base64");
   const key = Buffer.from(secrets.DEV_KEY, "hex");
-  let decipher = crypto.createDecipheriv('aes-256-cbc', key, null);
+  const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
+  let decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
   let decrypted = decipher.update(ciphertext);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
   return decrypted.toString('utf-8');

@@ -1,6 +1,6 @@
 import assert from "assert";
 import ftest from "firebase-functions-test";
-import eccrypto from "eccrypto";
+import { PrivateKey } from 'eciesjs'
 import * as admin from "firebase-admin";
 import { genPasskey, signRegisterRequest } from "./passkey";
 
@@ -10,10 +10,11 @@ export interface Key {
 }
 
 export const genEciesKey = () => {
-  const privKey = eccrypto.generatePrivate();
+  // const privKey = eccrypto.generatePrivate();
+  const privKey = PrivateKey.fromHex("bfa4a75f88092e91945413e18103e6564d03c15d95df4020b015f61221ff7048");
   return {
     privKey,
-    pubKey: eccrypto.getPublic(privKey),
+    pubKey: privKey.publicKey.toHex(),
   }
 }
 
@@ -30,7 +31,7 @@ import { registerUserWithPasskey } from "../auth"
 
 describe('registerPasskey', () => {
   let passkey: Key;
-  let eciesKey: Key;
+  let eciesKey: any;
 
   beforeAll(() => {
     jest.useFakeTimers();
@@ -52,14 +53,15 @@ describe('registerPasskey', () => {
     const req = {
       headers: { origin: true },
       body: {
-        uid: "someuser",
+        uid,
         passkey: Buffer.from(passkey.pubKey).toString('hex'),
-        kek: eciesKey.pubKey.toString("hex"),
+        kek: eciesKey.pubKey,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
       }
     };
+    console.log(req.body);
     const res = {
       setHeader: () => {},
       getHeader: () => {},
