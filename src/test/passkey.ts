@@ -45,11 +45,20 @@ export const signWithPasskey = (data: any, passkey: any) => {
     }
 };
 
-export const signRegisterRequest = (uid: string, kek: string, passkey: any) => {
+export const signRegisterRequest = (username: string, kek: string, passkey: any) => {
     return signWithPasskey({
         action: "register",
-        uid,
+        username,
         kek
+    }, passkey);
+}
+
+export const signLoginRequest = (uid: string, kek: string, challenge: string, passkey: any) => {
+    return signWithPasskey({
+        action: "login",
+        uid,
+        kek,
+        challenge
     }, passkey);
 }
 

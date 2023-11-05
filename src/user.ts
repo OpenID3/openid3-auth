@@ -14,7 +14,6 @@ export interface User {
     kek: string, // stored at client side to decrypt the dek from server
     deks: string[], // stored at server side
     loginStatus: {
-        step: "challenge" | "loggedin" | "loggedout",
         challenge: string,
         updatedAt: Timestamp,
     }
@@ -72,10 +71,12 @@ const nameHash = (name: string) : Buffer => {
 export async function createUser(
   uid: string,
   passkey: string,
+  kek: string,
   dek: string
 ) {
   await firestore().collection("users").doc(uid).set({
-    passkey: passkey,
+    passkey,
+    kek,
     deks: [dek],
     createdAt: new Timestamp(epoch(), 0),
     loginStatus: {
@@ -104,8 +105,9 @@ export async function preAuth(uid: string, challenge: string) {
   });
 }
 
-export async function postAuth(uid: string) {
+export async function postAuth(uid: string, kek: string) {
   await firestore().collection("users").doc(uid).update({
+    kek,
     loginStatus: {
       challenge: "",
       updatedAt: new Timestamp(epoch(), 0),

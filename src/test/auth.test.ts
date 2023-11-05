@@ -1,5 +1,5 @@
 import assert from "assert";
-import { Key, genEciesKey, genPasskey, signRegisterRequest } from "./passkey";
+import { Key, genEciesKey, genPasskey, signLoginRequest, signRegisterRequest } from "./passkey";
 
 import ftest from "firebase-functions-test";
 import crypto from "crypto";
@@ -9,6 +9,7 @@ testEnv.mockConfig({ doppler: {
   ENV: "dev",
   DEV_KEY: crypto.randomBytes(32).toString("hex"),
   DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
+  ORIGIN: "https://openid3.org",
 } });
 
 jest.mock("firebase-admin", () => {
@@ -23,6 +24,8 @@ jest.mock("firebase-admin", () => {
 // otherwise the env won't inject into the functions
 import * as auth from "../auth";
 import * as user from "../user";
+import { epoch } from "../utils";
+import { Timestamp } from "@google-cloud/firestore";
 
 jest.spyOn(user, "getUser").mockImplementation(
   () => Promise.resolve(null));
@@ -59,7 +62,26 @@ describe('registerPasskey', () => {
     };
   }
 
-  const buildRegisterResponse = (
+  const buildLoginRequest = (uid: string, challenge: string) => {
+    const {
+      clientDataJson,
+      authData,
+      signature
+    } = signLoginRequest(uid, eciesKey.pubKey, challenge, passkey);
+    return {
+      headers: { origin: true },
+      body: {
+        uid,
+        passkey: Buffer.from(passkey.pubKey).toString('hex'),
+        kek: eciesKey.pubKey,
+        clientDataJson,
+        authData,
+        signature: signature.toCompactHex(),
+      }
+    };
+  }
+
+  const buildResponse = (
     status: number,
     jsonValidator: any,
   ) => {
@@ -81,7 +103,7 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest(username);
-    const res = buildRegisterResponse(200, jsonValidator);
+    const res = buildResponse(200, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
@@ -93,7 +115,7 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest(username);
-    const res = buildRegisterResponse(400, jsonValidator);
+    const res = buildResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
@@ -106,7 +128,7 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest(username);
-    const res = buildRegisterResponse(400, jsonValidator);
+    const res = buildResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
@@ -119,7 +141,7 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest(username);
-    const res = buildRegisterResponse(400, jsonValidator);
+    const res = buildResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
@@ -144,7 +166,66 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest("some.USER");
-    const res = buildRegisterResponse(400, jsonValidator);
+    const res = buildResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
+  });
+
+  test('the user should login with challenge and new kek', async () => {
+    const username = "some.user";
+    const userId = user.genNameHash(username);
+    const pubKeyHex = Buffer.from(passkey.pubKey).toString("hex");
+    const userDb : user.User = {
+      passkey: pubKeyHex,
+      kek: "",
+      deks: [],
+      loginStatus: {
+        challenge: "",
+        updatedAt: new Timestamp(epoch(), 0),
+      },
+      createdAt: new Timestamp(epoch(), 0),
+    };
+    jest.spyOn(user, "preAuth").mockImplementation(
+      (_uid: string, challenge: string) => {
+        userDb.loginStatus = {
+          challenge,
+          updatedAt: new Timestamp(epoch(), 0),
+        };
+        return Promise.resolve();
+      }
+    );
+    jest.spyOn(user, "postAuth").mockImplementation(
+      (_uid: string, kek: string) => {
+        userDb.kek = kek;
+        return Promise.resolve();
+      }
+    );
+    jest.spyOn(user, "getUser").mockImplementation(
+      (uid: string) => {
+        if (uid == userId) {
+          return Promise.resolve(userDb);
+        } else {
+          return Promise.resolve(null);
+        }
+      });
+    const req = {
+      headers: { origin: true },
+      body: { uid: userId },
+    };
+    const firstDone = Promise.resolve(true);
+    const jsonValidator = (response: any) => {
+      expect(response).toHaveProperty("challenge");
+      expect(response.challenge).toEqual(userDb.loginStatus.challenge);
+      firstDone;
+    };
+    const res = buildResponse(200, jsonValidator);
+    await auth.getPasskeyChallenge(req as any, res as any);
+    await firstDone;
+
+    const loginReq = buildLoginRequest(
+      userId, userDb.loginStatus.challenge);
+    const loginRes = buildResponse(200, (response: any) => {
+      expect(response).toHaveProperty("token");
+    });
+    await auth.loginWithPasskey(loginReq as any, loginRes as any);
   });
 });
