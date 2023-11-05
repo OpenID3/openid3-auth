@@ -17,6 +17,7 @@ jest.mock("firebase-admin", () => {
     auth: jest.fn().mockReturnThis(),
     createUser: jest.fn(() => Promise.resolve()),
     createCustomToken: jest.fn((uid: string) => Promise.resolve(uid)),
+    verifyIdToken: jest.fn((token: string) => Promise.resolve({uid: token})),
   };
 });
 
@@ -26,6 +27,8 @@ import * as auth from "../auth";
 import * as user from "../user";
 import { epoch, sha3 } from "../utils";
 import { Timestamp } from "@google-cloud/firestore";
+import { decryptWithSymmKey, encryptWithSymmKey } from "../gcloudKms";
+import { decrypt } from "eciesjs";
 
 jest.spyOn(user, "getUser").mockImplementation(
   () => Promise.resolve(null));
@@ -200,13 +203,7 @@ describe('registerPasskey', () => {
       }
     );
     jest.spyOn(user, "getUser").mockImplementation(
-      (uid: string) => {
-        if (uid == userId) {
-          return Promise.resolve(userDb);
-        } else {
-          return Promise.resolve(null);
-        }
-      });
+      () => Promise.resolve(userDb));
     const req = {
       headers: { origin: true },
       body: { uid: userId },
@@ -255,13 +252,7 @@ describe('registerPasskey', () => {
       }
     );
     jest.spyOn(user, "getUser").mockImplementation(
-      (uid: string) => {
-        if (uid == userId) {
-          return Promise.resolve(userDb);
-        } else {
-          return Promise.resolve(null);
-        }
-      });
+      () => Promise.resolve(userDb));
     const invalidChallenge = sha3("invalid_challenge").toString("hex");
     const newKek = genEciesKey();
     const invalidLoginReq = buildLoginRequest(
@@ -282,5 +273,44 @@ describe('registerPasskey', () => {
       expect(response.message).toEqual("invalid signature");
     });
     await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
+  });
+
+  test('it should get dek and new dek', async () => {
+    const username = "some.user";
+    const userId = user.genNameHash(username);
+    const dek = crypto.randomBytes(32).toString("hex");
+    const dekId = sha3(dek).toString("hex");
+    const dekServerEncrypted = await encryptWithSymmKey(dek);
+    const userDb = {kek: eciesKey.pubKey, deks: [dekServerEncrypted]};
+    jest.spyOn(user, "getUser").mockImplementation(
+      () => Promise.resolve(userDb as unknown as user.User));
+    jest.spyOn(user, "rotateDek").mockImplementation(
+      async (_uid: string, dek: string, newDek: string) => {
+        userDb.deks = [dek, newDek];
+        return Promise.resolve();
+      });
+    const req = {
+      headers: {
+        origin: true,
+        authorization: "Bearer " + userId,
+      },
+      body: { keyId: dekId },
+    };
+    const res = buildResponse(200, async (response: any) => {
+      const dekFromClient = decrypt(
+        eciesKey.privKey.secret,
+        Buffer.from(response.dek, "hex")
+      ).toString("hex");
+      const dekFromServer = await decryptWithSymmKey(userDb.deks[0]);
+      expect(dekFromServer).toEqual(dekFromClient);
+
+      const newDekFromClient = decrypt(
+        eciesKey.privKey.secret,
+        Buffer.from(response.newDek, "hex")
+      ).toString("hex");
+      const newDekFromServer = await decryptWithSymmKey(userDb.deks[1]);
+      expect(newDekFromServer).toEqual(newDekFromClient);
+    });
+    await auth.getDataEncryptionKey(req as any, res as any);
   });
 });

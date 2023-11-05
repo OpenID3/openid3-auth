@@ -9,6 +9,7 @@ import {
   HexlinkError,
   epoch,
   handleError,
+  sha3,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
@@ -184,14 +185,15 @@ export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
       for (const dekServerEncrypted of user.deks) {
         const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
         const dekClientEncrypted = encrypt(
-          user.kek, Buffer.from(decryptedDek));
-        const keyId = crypto.createHash(decryptedDek).update("sha256").digest("hex");
+          user.kek, Buffer.from(decryptedDek, "hex"));
+        const keyId = sha3(decryptedDek).toString("hex");
         if (keyId === req.body.keyId) {
           const newDek = crypto.randomBytes(32).toString("hex");
           const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-          const newDekClientEncrypted = encrypt(
-            user.kek, Buffer.from(newDek));
           await rotateDek(decoded.uid, dekServerEncrypted, newDekServerEncrypted);
+
+          const newDekClientEncrypted = encrypt(
+            user.kek, Buffer.from(newDek, "hex"));
           res.status(200).json({
             dek: dekClientEncrypted.toString("hex"),
             newDek: newDekClientEncrypted.toString("hex")
