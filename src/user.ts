@@ -1,12 +1,12 @@
 /* Database */
 
-import { Timestamp } from "@google-cloud/firestore";
+import {Timestamp} from "@google-cloud/firestore";
 import * as admin from "firebase-admin";
-import { HexlinkError, epoch, sha3 } from "./utils";
+import {HexlinkError, epoch, sha3} from "./utils";
 
 const firestore = () => {
-    return admin.firestore();
-}
+  return admin.firestore();
+};
 
 export interface User {
     passkey: string; // public key of passkey
@@ -19,7 +19,7 @@ export interface User {
     createdAt: Timestamp;
 }
 
-export const INVALID_USER_NAME_TOO_SHORT =  
+export const INVALID_USER_NAME_TOO_SHORT =
   "invalid username: must be at least 5 characters";
 export const INVALID_USER_NAME_EMTPY_LABEL =
   "invalid username: empty label";
@@ -31,13 +31,13 @@ export const genNameHash = (username: string) => {
   validateUsername(username);
   const finalName = username + ".id";
   return nameHash(finalName).toString("hex");
-}
+};
 
 const validateUsername = (username: string) => {
   if (username.length < 5) {
     throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
   }
-  let labels = username.split(".");
+  const labels = username.split(".");
   for (const label of labels) {
     if (label.length == 0) {
       throw new HexlinkError(400, INVALID_USER_NAME_EMTPY_LABEL);
@@ -47,7 +47,7 @@ const validateUsername = (username: string) => {
     }
   }
   return username;
-}
+};
 
 const nameHash = (name: string) : Buffer => {
   if (name == "") {
@@ -61,13 +61,13 @@ const nameHash = (name: string) : Buffer => {
     const remainder = name.slice(index + 1);
     return sha3(Buffer.concat([nameHash(remainder), sha3(label)]));
   }
-}
+};
 
 export async function createUser(
-  uid: string,
-  passkey: string,
-  kek: string,
-  dek: string
+    uid: string,
+    passkey: string,
+    kek: string,
+    dek: string
 ) {
   await firestore().collection("users").doc(uid).set({
     passkey,
@@ -82,7 +82,7 @@ export async function createUser(
 }
 
 export async function getUser(
-  uid: string,
+    uid: string,
 ) : Promise<User | null> {
   const result = await firestore().collection("users").doc(uid).get();
   if (result && result.exists) {

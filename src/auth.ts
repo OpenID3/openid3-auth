@@ -3,7 +3,7 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import crypto from "crypto";
 import {secp256r1} from "@noble/curves/p256";
-import { encrypt } from 'eciesjs'
+import {encrypt} from "eciesjs";
 
 import {
   HexlinkError,
@@ -12,8 +12,8 @@ import {
   sha3,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
-import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
-import { createUser, genNameHash, getUser, postAuth, preAuth, rotateDek } from "./user";
+import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
+import {createUser, genNameHash, getUser, postAuth, preAuth, rotateDek} from "./user";
 
 const secrets = functions.config().doppler || {};
 
@@ -26,7 +26,7 @@ const secrets = functions.config().doppler || {};
  *  authData: string, // hex
  *  signature: string, // hex
  * }
- * 
+ *
  * res: {
  *   token: string,
  *   dek: string, // base64
@@ -64,15 +64,15 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         throw new HexlinkError(400, "user already exists");
       }
       await createUser(
-        uid,
-        req.body.passkey,
-        req.body.kek,
-        newDekServerEncrypted);
+          uid,
+          req.body.passkey,
+          req.body.kek,
+          newDekServerEncrypted);
       await admin.auth().createUser({uid});
       const token = await admin.auth().createCustomToken(uid);
       res.status(200).json({
         token: token,
-        dek: newDekClientEncrypted.toString("hex")
+        dek: newDekClientEncrypted.toString("hex"),
       });
     } catch (err: unknown) {
       handleError(res, err);
@@ -84,7 +84,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
  * req.body: {
  *  uid: string,
  * }
- * 
+ *
  * res: {
  *   challenge: string, // hex
  * }
@@ -99,8 +99,8 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
-      if (user.loginStatus.challenge.length > 0
-        && user.loginStatus.updatedAt.seconds + 180 > epoch()) {
+      if (user.loginStatus.challenge.length > 0 &&
+        user.loginStatus.updatedAt.seconds + 180 > epoch()) {
         res.status(200).json({challenge: user.loginStatus.challenge});
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
@@ -121,7 +121,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *   authData: string, // hex
  *   signature: string, // hex
  * }
- * 
+ *
  * res: {
  *   token: string,
  * }
@@ -133,8 +133,8 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
-      if (user.loginStatus.challenge.length > 0
-          && user.loginStatus.updatedAt.seconds + 180 < epoch()) {
+      if (user.loginStatus.challenge.length > 0 &&
+          user.loginStatus.updatedAt.seconds + 180 < epoch()) {
         throw new HexlinkError(403, "invalid challenge");
       }
       const challenge = crypto.createHash("sha256").update(
@@ -168,7 +168,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
  * req.body: {
  *   keyId: string,
  * }
- * 
+ *
  * res: {
  *   dek: string,
  *   newDek: string,
@@ -185,18 +185,22 @@ export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
       for (const dekServerEncrypted of user.deks) {
         const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
         const dekClientEncrypted = encrypt(
-          user.kek, Buffer.from(decryptedDek, "hex"));
+            user.kek, Buffer.from(decryptedDek, "hex"));
         const keyId = sha3(decryptedDek).toString("hex");
         if (keyId === req.body.keyId) {
           const newDek = crypto.randomBytes(32).toString("hex");
           const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-          await rotateDek(decoded.uid, dekServerEncrypted, newDekServerEncrypted);
+          await rotateDek(
+              decoded.uid,
+              dekServerEncrypted,
+              newDekServerEncrypted
+          );
 
           const newDekClientEncrypted = encrypt(
-            user.kek, Buffer.from(newDek, "hex"));
+              user.kek, Buffer.from(newDek, "hex"));
           res.status(200).json({
             dek: dekClientEncrypted.toString("hex"),
-            newDek: newDekClientEncrypted.toString("hex")
+            newDek: newDekClientEncrypted.toString("hex"),
           });
           return;
         }

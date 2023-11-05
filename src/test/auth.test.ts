@@ -1,16 +1,16 @@
 import assert from "assert";
-import { Key, genEciesKey, genPasskey, signLoginRequest, signRegisterRequest } from "./passkey";
+import {Key, genEciesKey, genPasskey, signLoginRequest, signRegisterRequest} from "./passkey";
 
 import ftest from "firebase-functions-test";
 import crypto from "crypto";
 
 const testEnv = ftest();
-testEnv.mockConfig({ doppler: {
+testEnv.mockConfig({doppler: {
   ENV: "dev",
   DEV_KEY: crypto.randomBytes(32).toString("hex"),
   DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
   ORIGIN: "https://openid3.org",
-} });
+}});
 
 jest.mock("firebase-admin", () => {
   return {
@@ -25,17 +25,17 @@ jest.mock("firebase-admin", () => {
 // otherwise the env won't inject into the functions
 import * as auth from "../auth";
 import * as user from "../user";
-import { epoch, sha3 } from "../utils";
-import { Timestamp } from "@google-cloud/firestore";
-import { decryptWithSymmKey, encryptWithSymmKey } from "../gcloudKms";
-import { decrypt } from "eciesjs";
+import {epoch, sha3} from "../utils";
+import {Timestamp} from "@google-cloud/firestore";
+import {decryptWithSymmKey, encryptWithSymmKey} from "../gcloudKms";
+import {decrypt} from "eciesjs";
 
 jest.spyOn(user, "getUser").mockImplementation(
-  () => Promise.resolve(null));
+    () => Promise.resolve(null));
 jest.spyOn(user, "createUser").mockImplementation(
-  () => Promise.resolve());
+    () => Promise.resolve());
 
-describe('registerPasskey', () => {
+describe("registerPasskey", () => {
   let passkey: Key;
   let eciesKey: any;
 
@@ -50,55 +50,59 @@ describe('registerPasskey', () => {
     const {
       clientDataJson,
       authData,
-      signature
+      signature,
     } = signRegisterRequest(username, eciesKey.pubKey, passkey);
     return {
-      headers: { origin: true },
+      headers: {origin: true},
       body: {
         username,
-        passkey: Buffer.from(passkey.pubKey).toString('hex'),
+        passkey: Buffer.from(passkey.pubKey).toString("hex"),
         kek: eciesKey.pubKey,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
-      }
+      },
     };
-  }
+  };
 
   const buildLoginRequest = (uid: string, kek: string, challenge: string) => {
     const {
       clientDataJson,
       authData,
-      signature
+      signature,
     } = signLoginRequest(uid, kek, challenge, passkey);
     return {
-      headers: { origin: true },
+      headers: {origin: true},
       body: {
         uid,
-        passkey: Buffer.from(passkey.pubKey).toString('hex'),
+        passkey: Buffer.from(passkey.pubKey).toString("hex"),
         kek,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
-      }
+      },
     };
-  }
+  };
 
   const buildResponse = (
-    status: number,
-    jsonValidator: any,
+      status: number,
+      jsonValidator: any,
   ) => {
     return {
-      setHeader: () => {},
-      getHeader: () => {},
+      setHeader: () => {
+        return;
+      },
+      getHeader: () => {
+        return;
+      },
       status: (returnedStatus: number) => {
         assert.equal(returnedStatus, status);
         return {json: jsonValidator};
       },
-    }
-  }
+    };
+  };
 
-  test('it should register a new user with passkey', (done: any) => {
+  test("it should register a new user with passkey", (done: any) => {
     const username = "SOME.user";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("dek");
@@ -110,7 +114,7 @@ describe('registerPasskey', () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test('it should throw with too short username', (done: any) => {
+  test("it should throw with too short username", (done: any) => {
     const username = "some";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("message");
@@ -122,12 +126,12 @@ describe('registerPasskey', () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test('it should throw with disallowed characters', (done: any) => {
+  test("it should throw with disallowed characters", (done: any) => {
     const username = "some_user";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("message");
       expect(response.message).toEqual(
-        user.INVALID_USER_NAME_DISALLOWED_CHARACTERS);
+          user.INVALID_USER_NAME_DISALLOWED_CHARACTERS);
       done();
     };
     const req = buildRegisterRequest(username);
@@ -135,12 +139,12 @@ describe('registerPasskey', () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test('it should throw with empty label', (done: any) => {
+  test("it should throw with empty label", (done: any) => {
     const username = "SOME..user";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("message");
       expect(response.message).toEqual(
-        user.INVALID_USER_NAME_EMTPY_LABEL);
+          user.INVALID_USER_NAME_EMTPY_LABEL);
       done();
     };
     const req = buildRegisterRequest(username);
@@ -148,21 +152,21 @@ describe('registerPasskey', () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test('it should throw if user already exists', (done: any) => {
+  test("it should throw if user already exists", (done: any) => {
     const username = " SOME.user ";
     jest.spyOn(user, "getUser").mockImplementation(
-      (uid: string) => {
-        if (uid == user.genNameHash(username)) {
-          return Promise.resolve({
-            passkey: passkey.pubKey,
-            kek: eciesKey.pubKey,
-            deks: [],
-            createdAt: { seconds: 0, nanoseconds: 0 },
-          } as unknown as user.User);
-        } else {
-          return Promise.resolve(null);
-        }
-      });
+        (uid: string) => {
+          if (uid == user.genNameHash(username)) {
+            return Promise.resolve({
+              passkey: passkey.pubKey,
+              kek: eciesKey.pubKey,
+              deks: [],
+              createdAt: {seconds: 0, nanoseconds: 0},
+            } as unknown as user.User);
+          } else {
+            return Promise.resolve(null);
+          }
+        });
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("message");
       expect(response.message).toEqual("user already exists");
@@ -173,7 +177,7 @@ describe('registerPasskey', () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test('the user should login with challenge and new kek', async () => {
+  test("the user should login with challenge and new kek", async () => {
     const username = "some.user";
     const userId = user.genNameHash(username);
     const pubKeyHex = Buffer.from(passkey.pubKey).toString("hex");
@@ -188,25 +192,25 @@ describe('registerPasskey', () => {
       createdAt: new Timestamp(epoch(), 0),
     };
     jest.spyOn(user, "preAuth").mockImplementation(
-      (_uid: string, challenge: string) => {
-        userDb.loginStatus = {
-          challenge,
-          updatedAt: new Timestamp(epoch(), 0),
-        };
-        return Promise.resolve();
-      }
+        (_uid: string, challenge: string) => {
+          userDb.loginStatus = {
+            challenge,
+            updatedAt: new Timestamp(epoch(), 0),
+          };
+          return Promise.resolve();
+        }
     );
     jest.spyOn(user, "postAuth").mockImplementation(
-      (_uid: string, kek: string) => {
-        userDb.kek = kek;
-        return Promise.resolve();
-      }
+        (_uid: string, kek: string) => {
+          userDb.kek = kek;
+          return Promise.resolve();
+        }
     );
     jest.spyOn(user, "getUser").mockImplementation(
-      () => Promise.resolve(userDb));
+        () => Promise.resolve(userDb));
     const req = {
-      headers: { origin: true },
-      body: { uid: userId },
+      headers: {origin: true},
+      body: {uid: userId},
     };
     const firstDone = Promise.resolve(true);
     const jsonValidator = (response: any) => {
@@ -220,7 +224,7 @@ describe('registerPasskey', () => {
 
     const newKek = genEciesKey();
     const loginReq = buildLoginRequest(
-      userId, newKek.pubKey, userDb.loginStatus.challenge);
+        userId, newKek.pubKey, userDb.loginStatus.challenge);
     const secondDone = Promise.resolve(true);
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
@@ -231,7 +235,7 @@ describe('registerPasskey', () => {
     expect(userDb.kek).toEqual(newKek.pubKey);
   });
 
-  test('it should throw if challenge or origin does not match', async () => {
+  test("it should throw if challenge or origin does not match", async () => {
     const username = "some.user";
     const userId = user.genNameHash(username);
     const challenge = sha3("valid_challenge").toString("hex");
@@ -246,17 +250,17 @@ describe('registerPasskey', () => {
       createdAt: new Timestamp(epoch(), 0),
     };
     jest.spyOn(user, "postAuth").mockImplementation(
-      (_uid: string, kek: string) => {
-        userDb.kek = kek;
-        return Promise.resolve();
-      }
+        (_uid: string, kek: string) => {
+          userDb.kek = kek;
+          return Promise.resolve();
+        }
     );
     jest.spyOn(user, "getUser").mockImplementation(
-      () => Promise.resolve(userDb));
+        () => Promise.resolve(userDb));
     const invalidChallenge = sha3("invalid_challenge").toString("hex");
     const newKek = genEciesKey();
     const invalidLoginReq = buildLoginRequest(
-      userId, newKek.pubKey, invalidChallenge);
+        userId, newKek.pubKey, invalidChallenge);
     const firstDone = Promise.resolve();
     const loginRes = buildResponse(400, (response: any) => {
       expect(response.message).toEqual("invalid client data");
@@ -267,7 +271,7 @@ describe('registerPasskey', () => {
 
     // valid client data but invalid signature
     const validLoginReq = buildLoginRequest(
-      userId, newKek.pubKey, challenge);
+        userId, newKek.pubKey, challenge);
     invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
     const loginRes2 = buildResponse(400, (response: any) => {
       expect(response.message).toEqual("invalid signature");
@@ -275,7 +279,7 @@ describe('registerPasskey', () => {
     await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
   });
 
-  test('it should get dek and new dek', async () => {
+  test("it should get dek and new dek", async () => {
     const username = "some.user";
     const userId = user.genNameHash(username);
     const dek = crypto.randomBytes(32).toString("hex");
@@ -283,30 +287,30 @@ describe('registerPasskey', () => {
     const dekServerEncrypted = await encryptWithSymmKey(dek);
     const userDb = {kek: eciesKey.pubKey, deks: [dekServerEncrypted]};
     jest.spyOn(user, "getUser").mockImplementation(
-      () => Promise.resolve(userDb as unknown as user.User));
+        () => Promise.resolve(userDb as unknown as user.User));
     jest.spyOn(user, "rotateDek").mockImplementation(
-      async (_uid: string, dek: string, newDek: string) => {
-        userDb.deks = [dek, newDek];
-        return Promise.resolve();
-      });
+        async (_uid: string, dek: string, newDek: string) => {
+          userDb.deks = [dek, newDek];
+          return Promise.resolve();
+        });
     const req = {
       headers: {
         origin: true,
         authorization: "Bearer " + userId,
       },
-      body: { keyId: dekId },
+      body: {keyId: dekId},
     };
     const res = buildResponse(200, async (response: any) => {
       const dekFromClient = decrypt(
-        eciesKey.privKey.secret,
-        Buffer.from(response.dek, "hex")
+          eciesKey.privKey.secret,
+          Buffer.from(response.dek, "hex")
       ).toString("hex");
       const dekFromServer = await decryptWithSymmKey(userDb.deks[0]);
       expect(dekFromServer).toEqual(dekFromClient);
 
       const newDekFromClient = decrypt(
-        eciesKey.privKey.secret,
-        Buffer.from(response.newDek, "hex")
+          eciesKey.privKey.secret,
+          Buffer.from(response.newDek, "hex")
       ).toString("hex");
       const newDekFromServer = await decryptWithSymmKey(userDb.deks[1]);
       expect(newDekFromServer).toEqual(newDekFromClient);

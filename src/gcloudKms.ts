@@ -28,19 +28,19 @@ const encryptWithDevKey = (plaintext: string) => {
   const key = Buffer.from(secrets.DEV_KEY, "hex");
   const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
   const cipher = crypto.createCipheriv(DEV_ENC_ALGORITHM, key, iv);
-  let encrypted = cipher.update(plaintext);
+  const encrypted = cipher.update(plaintext);
   return Buffer.concat([encrypted, cipher.final()]).toString("base64");
-}
+};
 
 const decryptWithDevKey = (text: string) => {
   const ciphertext = Buffer.from(text, "base64");
   const key = Buffer.from(secrets.DEV_KEY, "hex");
   const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
-  let decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
   let decrypted = decipher.update(ciphertext);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString('utf-8');
-}
+  return decrypted.toString("utf-8");
+};
 
 export const encryptWithSymmKey = async function(plaintext: string) {
   if (secrets.ENV === "dev") {
