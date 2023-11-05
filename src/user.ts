@@ -2,8 +2,7 @@
 
 import { Timestamp } from "@google-cloud/firestore";
 import * as admin from "firebase-admin";
-import { HexlinkError, epoch } from "./utils";
-import crypto from "crypto";
+import { HexlinkError, epoch, sha3 } from "./utils";
 
 const firestore = () => {
     return admin.firestore();
@@ -48,10 +47,6 @@ const validateUsername = (username: string) => {
     }
   }
   return username;
-}
-
-const sha3 = (data: string | Buffer) : Buffer => {
-  return crypto.createHash("sha3-256").update(data).digest();
 }
 
 const nameHash = (name: string) : Buffer => {

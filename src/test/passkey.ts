@@ -13,13 +13,13 @@ export const genPasskey = (): any => {
     return { privKey, pubKey };
 }
 
-export const signWithPasskey = (data: any, passkey: any) => {
+export const signWithPasskey = (data: any, origin: string, passkey: any) => {
     const challenge = crypto.createHash("sha256").update(
         JSON.stringify(data)
     ).digest("hex");
     const clientDataJson = JSON.stringify({
-        challenge: challenge,
-        origin: "https://openid3.org",
+        challenge,
+        origin,
         somekey: "somevalue",
     });
     const clientDataHash = crypto.createHash("sha256")
@@ -50,16 +50,21 @@ export const signRegisterRequest = (username: string, kek: string, passkey: any)
         action: "register",
         username,
         kek
-    }, passkey);
+    }, "https://openid3.org", passkey);
 }
 
-export const signLoginRequest = (uid: string, kek: string, challenge: string, passkey: any) => {
+export const signLoginRequest = (
+    uid: string,
+    kek: string,
+    challenge: string,
+    passkey: any
+) => {
     return signWithPasskey({
         action: "login",
         uid,
         kek,
         challenge
-    }, passkey);
+    }, "https://openid3.org", passkey);
 }
 
 export const genEciesKey = () => {

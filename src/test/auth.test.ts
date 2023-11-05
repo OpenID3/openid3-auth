@@ -24,7 +24,7 @@ jest.mock("firebase-admin", () => {
 // otherwise the env won't inject into the functions
 import * as auth from "../auth";
 import * as user from "../user";
-import { epoch } from "../utils";
+import { epoch, sha3 } from "../utils";
 import { Timestamp } from "@google-cloud/firestore";
 
 jest.spyOn(user, "getUser").mockImplementation(
@@ -62,18 +62,18 @@ describe('registerPasskey', () => {
     };
   }
 
-  const buildLoginRequest = (uid: string, challenge: string) => {
+  const buildLoginRequest = (uid: string, kek: string, challenge: string) => {
     const {
       clientDataJson,
       authData,
       signature
-    } = signLoginRequest(uid, eciesKey.pubKey, challenge, passkey);
+    } = signLoginRequest(uid, kek, challenge, passkey);
     return {
       headers: { origin: true },
       body: {
         uid,
         passkey: Buffer.from(passkey.pubKey).toString('hex'),
-        kek: eciesKey.pubKey,
+        kek,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
@@ -221,11 +221,66 @@ describe('registerPasskey', () => {
     await auth.getPasskeyChallenge(req as any, res as any);
     await firstDone;
 
+    const newKek = genEciesKey();
     const loginReq = buildLoginRequest(
-      userId, userDb.loginStatus.challenge);
+      userId, newKek.pubKey, userDb.loginStatus.challenge);
+    const secondDone = Promise.resolve(true);
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
+      secondDone;
     });
     await auth.loginWithPasskey(loginReq as any, loginRes as any);
+    await secondDone;
+    expect(userDb.kek).toEqual(newKek.pubKey);
+  });
+
+  test('it should throw if challenge or origin does not match', async () => {
+    const username = "some.user";
+    const userId = user.genNameHash(username);
+    const challenge = sha3("valid_challenge").toString("hex");
+    const userDb : user.User = {
+      passkey: Buffer.from(passkey.pubKey).toString("hex"),
+      kek: eciesKey.pubKey,
+      deks: [],
+      loginStatus: {
+        challenge,
+        updatedAt: new Timestamp(epoch(), 0),
+      },
+      createdAt: new Timestamp(epoch(), 0),
+    };
+    jest.spyOn(user, "postAuth").mockImplementation(
+      (_uid: string, kek: string) => {
+        userDb.kek = kek;
+        return Promise.resolve();
+      }
+    );
+    jest.spyOn(user, "getUser").mockImplementation(
+      (uid: string) => {
+        if (uid == userId) {
+          return Promise.resolve(userDb);
+        } else {
+          return Promise.resolve(null);
+        }
+      });
+    const invalidChallenge = sha3("invalid_challenge").toString("hex");
+    const newKek = genEciesKey();
+    const invalidLoginReq = buildLoginRequest(
+      userId, newKek.pubKey, invalidChallenge);
+    const firstDone = Promise.resolve();
+    const loginRes = buildResponse(400, (response: any) => {
+      expect(response.message).toEqual("invalid client data");
+      firstDone;
+    });
+    await auth.loginWithPasskey(invalidLoginReq as any, loginRes as any);
+    await firstDone;
+
+    // valid client data but invalid signature
+    const validLoginReq = buildLoginRequest(
+      userId, newKek.pubKey, challenge);
+    invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
+    const loginRes2 = buildResponse(400, (response: any) => {
+      expect(response.message).toEqual("invalid signature");
+    });
+    await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
   });
 });

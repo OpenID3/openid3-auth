@@ -1,4 +1,5 @@
 import * as functions from "firebase-functions";
+import crypto from "crypto";
 
 export const epoch = () => {
   return Math.floor(new Date().getTime() / 1000);
@@ -24,3 +25,7 @@ export const handleError = function(
     res.status(500).json({message: "internal server error"});
   }
 };
+
+export const sha3 = (data: string | Buffer) : Buffer => {
+  return crypto.createHash("sha3-256").update(data).digest();
+}

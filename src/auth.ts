@@ -236,7 +236,7 @@ const validatePasskeySignature = (
   const parsed = JSON.parse(clientDataJson);
   for (const [key, value] of expected) {
     if (parsed[key] !== value) {
-      throw new HexlinkError(400, "Invalid client data");
+      throw new HexlinkError(400, "invalid client data");
     }
   }
 
@@ -251,6 +251,6 @@ const validatePasskeySignature = (
       .update(signedData)
       .digest("hex");
   if (!secp256r1.verify(Buffer.from(signature, "hex"), signedDataHash, pubKey)) {
-    throw new HexlinkError(400, "Invalid signature");
+    throw new HexlinkError(400, "invalid signature");
   }
 };
