@@ -1,7 +1,6 @@
 import assert from "assert";
 import ftest from "firebase-functions-test";
 import { PrivateKey } from 'eciesjs'
-import * as admin from "firebase-admin";
 import crypto from "crypto";
 import { genPasskey, signRegisterRequest } from "./passkey";
 
@@ -24,7 +23,14 @@ testEnv.mockConfig({ doppler: {
   DEV_KEY: crypto.randomBytes(32).toString("hex"),
   DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
 } });
-admin.initializeApp({projectId: "test"});
+
+jest.mock("firebase-admin", () => {
+  return {
+    auth: jest.fn().mockReturnThis(),
+    createUser: jest.fn(() => Promise.resolve()),
+    createCustomToken: jest.fn((uid: string) => Promise.resolve(uid)),
+  }
+});
 
 // import after testEnv is setup and properly mocked
 // otherwise the env won't inject into the functions
@@ -45,17 +51,17 @@ describe('registerPasskey', () => {
     testEnv.cleanup()
   });
 
-  test('it register a new user with passkey', (done: any) => {
-    const uid = "someuser";
+  test('it registers a new user with passkey', (done: any) => {
+    const username = "someuser";
     const {
       clientDataJson,
       authData,
       signature
-    } = signRegisterRequest(uid, passkey);
+    } = signRegisterRequest(username, eciesKey.pubKey, passkey);
     const req = {
       headers: { origin: true },
       body: {
-        uid,
+        username,
         passkey: Buffer.from(passkey.pubKey).toString('hex'),
         kek: eciesKey.pubKey,
         clientDataJson,
@@ -77,9 +83,6 @@ describe('registerPasskey', () => {
         };
       },
     };
-
-    jest.spyOn(user, "getUser").mockImplementation(
-      () => Promise.resolve(null));
     jest.spyOn(user, "createUser").mockImplementation(
       () => Promise.resolve());
     auth.registerUserWithPasskey(req as any, res as any);

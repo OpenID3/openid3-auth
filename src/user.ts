@@ -2,7 +2,8 @@
 
 import { Timestamp } from "@google-cloud/firestore";
 import * as admin from "firebase-admin";
-import { epoch } from "./utils";
+import { HexlinkError, epoch } from "./utils";
+import crypto from "crypto";
 
 const firestore = () => {
     return admin.firestore();
@@ -20,14 +21,45 @@ interface User {
     createdAt: Timestamp;
 }
 
-export async function getUser(
-    uid: string,
-) : Promise<User | null> {
-  const result = await firestore().collection("users").doc(uid).get();
-  if (result && result.exists) {
-    return result.data() as User;
+export const genNameHash = (username: string) => {
+  username = username.trim().toLowerCase();
+  validateUsername(username);
+  const finalName = username + ".id";
+  return nameHash(finalName).toString("hex");
+}
+
+const validateUsername = (username: string) => {
+  if (username.length < 5) {
+    throw new HexlinkError(400, "username must be at least 5 characters");
   }
-  return null;
+  let labels = username.split(".");
+  for (const label of labels) {
+    if (label.length == 0) {
+      throw new HexlinkError(400, "invalid uid format");
+    }
+    if (!/^[a-z0-9]+$/.test(label)) {
+      throw new HexlinkError(400, "username must be alphanumeric");
+    }
+  }
+  return username;
+}
+
+const sha3 = (data: string | Buffer) : Buffer => {
+  return crypto.createHash("sha3-256").update(data).digest();
+}
+
+const nameHash = (name: string) : Buffer => {
+  if (name == "") {
+    return Buffer.from("0000000000000000000000000000000000000000000000000000000000000000", "hex");
+  }
+  const index = name.indexOf(".");
+  if (index === -1) {
+    return sha3(Buffer.concat([nameHash(""), sha3(name)]));
+  } else {
+    const label = name.slice(0, index);
+    const remainder = name.slice(index + 1);
+    return sha3(Buffer.concat([nameHash(remainder), sha3(label)]));
+  }
 }
 
 export async function createUser(
@@ -35,6 +67,10 @@ export async function createUser(
   passkey: string,
   dek: string
 ) {
+  const user = await getUser(uid);
+  if (user != null) {
+    throw new HexlinkError(400, "User already exists");
+  }
   await firestore().collection("users").doc(uid).set({
     passkey: passkey,
     deks: [dek],
@@ -44,7 +80,16 @@ export async function createUser(
       updatedAt: new Timestamp(epoch(), 0),
     },
   });
-  await admin.auth().createUser({uid});
+}
+
+export async function getUser(
+  uid: string,
+) : Promise<User | null> {
+  const result = await firestore().collection("users").doc(uid).get();
+  if (result && result.exists) {
+    return result.data() as User;
+  }
+  return null;
 }
 
 export async function preAuth(uid: string, challenge: string) {
