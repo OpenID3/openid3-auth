@@ -58,5 +58,5 @@ export const genEciesKey = () => {
     return {
       privKey,
       pubKey: privKey.publicKey.toHex(),
-    }
-  }
+    };
+}

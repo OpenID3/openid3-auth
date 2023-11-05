@@ -74,10 +74,6 @@ export async function createUser(
   passkey: string,
   dek: string
 ) {
-  const user = await getUser(uid);
-  if (user != null) {
-    throw new HexlinkError(400, "User already exists");
-  }
   await firestore().collection("users").doc(uid).set({
     passkey: passkey,
     deks: [dek],

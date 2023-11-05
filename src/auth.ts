@@ -58,6 +58,10 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       const newDekClientEncrypted = encrypt(req.body.kek, Buffer.from(newDek));
       const newDekServerEncrypted = await encryptWithSymmKey(newDek);
       const uid = genNameHash(req.body.username);
+      const user = await getUser(uid);
+      if (user != null) {
+        throw new HexlinkError(400, "user already exists");
+      }
       await createUser(
         uid,
         req.body.passkey,

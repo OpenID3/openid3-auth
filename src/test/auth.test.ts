@@ -24,6 +24,8 @@ jest.mock("firebase-admin", () => {
 import * as auth from "../auth";
 import * as user from "../user";
 
+jest.spyOn(user, "getUser").mockImplementation(
+  () => Promise.resolve(null));
 jest.spyOn(user, "createUser").mockImplementation(
   () => Promise.resolve());
 
@@ -117,6 +119,31 @@ describe('registerPasskey', () => {
       done();
     };
     const req = buildRegisterRequest(username);
+    const res = buildRegisterResponse(400, jsonValidator);
+    auth.registerUserWithPasskey(req as any, res as any);
+  });
+
+  test('it should throw if user already exists', (done: any) => {
+    const username = " SOME.user ";
+    jest.spyOn(user, "getUser").mockImplementation(
+      (uid: string) => {
+        if (uid == user.genNameHash(username)) {
+          return Promise.resolve({
+            passkey: passkey.pubKey,
+            kek: eciesKey.pubKey,
+            deks: [],
+            createdAt: { seconds: 0, nanoseconds: 0 },
+          } as unknown as user.User);
+        } else {
+          return Promise.resolve(null);
+        }
+      });
+    const jsonValidator = (response: any) => {
+      expect(response).toHaveProperty("message");
+      expect(response.message).toEqual("user already exists");
+      done();
+    };
+    const req = buildRegisterRequest("some.USER");
     const res = buildRegisterResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
