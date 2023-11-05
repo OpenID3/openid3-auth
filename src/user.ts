@@ -9,7 +9,7 @@ const firestore = () => {
     return admin.firestore();
 }
 
-interface User {
+export interface User {
     passkey: string; // public key of passkey
     kek: string, // stored at client side to decrypt the dek from server
     deks: string[], // stored at server side
@@ -21,6 +21,13 @@ interface User {
     createdAt: Timestamp;
 }
 
+export const INVALID_USER_NAME_TOO_SHORT =  
+  "invalid username: must be at least 5 characters";
+export const INVALID_USER_NAME_EMTPY_LABEL =
+  "invalid username: empty label";
+export const INVALID_USER_NAME_DISALLOWED_CHARACTERS =
+  "invalid username: disallowed characters";
+
 export const genNameHash = (username: string) => {
   username = username.trim().toLowerCase();
   validateUsername(username);
@@ -30,15 +37,15 @@ export const genNameHash = (username: string) => {
 
 const validateUsername = (username: string) => {
   if (username.length < 5) {
-    throw new HexlinkError(400, "username must be at least 5 characters");
+    throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
   }
   let labels = username.split(".");
   for (const label of labels) {
     if (label.length == 0) {
-      throw new HexlinkError(400, "invalid uid format");
+      throw new HexlinkError(400, INVALID_USER_NAME_EMTPY_LABEL);
     }
     if (!/^[a-z0-9]+$/.test(label)) {
-      throw new HexlinkError(400, "username must be alphanumeric");
+      throw new HexlinkError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
     }
   }
   return username;

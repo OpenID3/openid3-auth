@@ -19,7 +19,8 @@ export const handleError = function(
 ) {
   if (err instanceof HexlinkError) {
     res.status(err.code).json({message: err.message});
+  } else {
+    console.log("Error: ", err);
+    res.status(500).json({message: "internal server error"});
   }
-  console.log("Error: ", err);
-  res.status(500).json({message: "internal server error"});
 };

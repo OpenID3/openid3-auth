@@ -1,5 +1,11 @@
 import { secp256r1 } from "@noble/curves/p256";
+import { PrivateKey } from 'eciesjs'
 import crypto from "crypto";
+
+export interface Key {
+    privKey: Uint8Array | Buffer,
+    pubKey: Uint8Array | Buffer,
+}
 
 export const genPasskey = (): any => {
     const privKey = secp256r1.utils.randomPrivateKey();
@@ -46,3 +52,11 @@ export const signRegisterRequest = (uid: string, kek: string, passkey: any) => {
         kek
     }, passkey);
 }
+
+export const genEciesKey = () => {
+    const privKey = new PrivateKey();
+    return {
+      privKey,
+      pubKey: privKey.publicKey.toHex(),
+    }
+  }
