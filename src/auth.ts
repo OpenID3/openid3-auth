@@ -12,10 +12,49 @@ import {
   sha3,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
-import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
-import {createUser, genNameHash, getUser, postAuth, preAuth, rotateDek} from "./user";
+import {
+  checkNameRateLimit,
+  getChallengeRateLimit,
+  registerRateLimit,
+} from "./ratelimiter";
+import {
+  createUser,
+  genNameHash,
+  getUser,
+  postAuth,
+  preAuth,
+  rotateDek,
+  userExist,
+} from "./user";
 
 const secrets = functions.config().doppler || {};
+
+/**
+ * req.body: {
+ *   username: string,
+ * }
+ *
+ * res: {
+ *   registered: boolean,
+ * }
+ */
+export const isNameRegistered = functions.https.onRequest((req, res) => {
+  return cors({origin: true})(req, res, async () => {
+    try {
+      if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
+        throw new HexlinkError(429, "Too many requests");
+      }
+      const uid = genNameHash(req.body.username);
+      if (await userExist(uid)) {
+        res.status(200).json({registered: false});
+      } else {
+        res.status(200).json({registered: true});
+      }
+    } catch (err: unknown) {
+      handleError(res, err);
+    }
+  });
+});
 
 /**
  * req.body: {

@@ -7,6 +7,10 @@ export async function registerRateLimit(ip: string) {
   return await rateLimiter("sign_up", `ip_${ip}`, 60, 10);
 }
 
+export async function checkNameRateLimit(ip: string) {
+  return await rateLimiter("check_name", `ip_${ip}`, 60, 30);
+}
+
 export async function getChallengeRateLimit(ip: string) {
   return await rateLimiter("get_challenge", `ip_${ip}`, 60, 30);
 }

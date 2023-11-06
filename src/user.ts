@@ -91,6 +91,16 @@ export async function getUser(
   return null;
 }
 
+export async function userExist(
+    uid: string,
+) : Promise<boolean> {
+  const result = await firestore().collection("users").doc(uid).get();
+  if (result && result.exists) {
+    return true;
+  }
+  return false;
+}
+
 export async function preAuth(uid: string, challenge: string) {
   await firestore().collection("users").doc(uid).update({
     loginStatus: {

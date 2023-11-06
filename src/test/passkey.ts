@@ -13,7 +13,11 @@ export const genPasskey = (): any => {
   return {privKey, pubKey};
 };
 
-export const signWithPasskey = (data: any, origin: string, passkey: any) => {
+export const signWithPasskey = (
+    data: any,
+    origin: string,
+    passkey: any
+) => {
   const challenge = crypto.createHash("sha256").update(
       JSON.stringify(data)
   ).digest("hex");
