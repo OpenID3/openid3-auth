@@ -29,3 +29,7 @@ export const handleError = function(
 export const sha3 = (data: string | Buffer) : Buffer => {
   return crypto.createHash("sha3-256").update(data).digest();
 };
+
+export const sha256 = (data: string | Buffer): Buffer => {
+  return crypto.createHash("sha256").update(data).digest();
+};

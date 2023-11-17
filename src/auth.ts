@@ -4,12 +4,13 @@ import * as admin from "firebase-admin";
 import crypto from "crypto";
 import {secp256r1} from "@noble/curves/p256";
 import {encrypt} from "eciesjs";
+import {ethers} from "ethers";
 
 import {
   HexlinkError,
   epoch,
   handleError,
-  sha3,
+  sha256,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {
@@ -18,12 +19,13 @@ import {
   registerRateLimit,
 } from "./ratelimiter";
 import {
+  User,
   createUser,
   genNameHash,
   getUser,
   postAuth,
   preAuth,
-  rotateDek,
+  updateDeks,
   userExist,
 } from "./user";
 
@@ -69,6 +71,7 @@ export const isNameRegistered = functions.https.onRequest((req, res) => {
  * res: {
  *   token: string,
  *   dek: string, // base64
+ *   uid: string
  * }
  */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
@@ -77,13 +80,18 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
       }
+      const uid = genNameHash(req.body.username);
+      const user = await getUser(uid);
+      if (user != null) {
+        throw new HexlinkError(400, "user already exists");
+      }
       const challenge = crypto.createHash("sha256").update(
-          JSON.stringify({
-            action: "register",
-            username: req.body.username,
-            kek: req.body.kek,
-          })
-      ).digest("hex");
+          Buffer.concat([
+            Buffer.from("register", "utf-8"), // action
+            Buffer.from(req.body.username, "utf-8"), // uid
+            Buffer.from(req.body.kek, "hex"), // kek
+          ])
+      ).digest("base64");
       validatePasskeySignature(
           req.body.clientDataJson,
           [
@@ -95,23 +103,20 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.passkey,
       );
       const newDek = crypto.randomBytes(32).toString("hex");
+      const dekId = sha256(newDek).toString("hex");
       const newDekClientEncrypted = encrypt(req.body.kek, Buffer.from(newDek));
-      const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-      const uid = genNameHash(req.body.username);
-      const user = await getUser(uid);
-      if (user != null) {
-        throw new HexlinkError(400, "user already exists");
-      }
       await createUser(
           uid,
           req.body.passkey,
           req.body.kek,
-          newDekServerEncrypted);
+          {[dekId]: await encryptWithSymmKey(newDek)}
+      );
       await admin.auth().createUser({uid});
       const token = await admin.auth().createCustomToken(uid);
       res.status(200).json({
         token: token,
         dek: newDekClientEncrypted.toString("hex"),
+        uid,
       });
     } catch (err: unknown) {
       handleError(res, err);
@@ -155,6 +160,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
 /**
  * req.body: {
  *   uid: string,
+ *   dekId: string,
  *   kek: string, // hex
  *   clientDataJson: string,
  *   authData: string, // hex
@@ -163,6 +169,8 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *
  * res: {
  *   token: string,
+ *   dek: string,
+ *   newDek: string,
  * }
  */
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
@@ -177,13 +185,14 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
         throw new HexlinkError(403, "invalid challenge");
       }
       const challenge = crypto.createHash("sha256").update(
-          JSON.stringify({
-            action: "login",
-            uid: req.body.uid,
-            kek: req.body.kek,
-            challenge: user.loginStatus.challenge,
-          })
-      ).digest("hex");
+          Buffer.concat([
+            Buffer.from("login", "utf-8"), // action
+            Buffer.from(req.body.uid, "hex"), // uid
+            Buffer.from(req.body.kek, "hex"), // kek
+            Buffer.from(req.body.dekId, "hex"), // dekId
+            Buffer.from(user.loginStatus.challenge, "hex"), // challenge
+          ])
+      ).digest("base64");
       validatePasskeySignature(
           req.body.clientDataJson,
           [
@@ -194,9 +203,18 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           req.body.signature,
           user.passkey,
       );
-      await postAuth(req.body.uid, req.body.kek);
-      const token = admin.auth().createCustomToken(req.body.uid);
-      res.status(200).json({token: token});
+      const {dek, newDek} = await getAndGenDeks(
+          req.body.dekId, req.body.kek, user);
+      await postAuth(req.body.uid, req.body.kek, {
+        [dek.keyId]: dek.server,
+        [newDek.keyId]: newDek.server,
+      });
+      const token = await admin.auth().createCustomToken(req.body.uid);
+      res.status(200).json({
+        token: token,
+        dek: dek.client,
+        newDek: newDek.client,
+      });
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -221,35 +239,56 @@ export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
       if (user == null) {
         throw new HexlinkError(404, "User not found");
       }
-      for (const dekServerEncrypted of user.deks) {
-        const decryptedDek = await decryptWithSymmKey(dekServerEncrypted);
-        const dekClientEncrypted = encrypt(
-            user.kek, Buffer.from(decryptedDek, "hex"));
-        const keyId = sha3(decryptedDek).toString("hex");
-        if (keyId === req.body.keyId) {
-          const newDek = crypto.randomBytes(32).toString("hex");
-          const newDekServerEncrypted = await encryptWithSymmKey(newDek);
-          await rotateDek(
-              decoded.uid,
-              dekServerEncrypted,
-              newDekServerEncrypted
-          );
-
-          const newDekClientEncrypted = encrypt(
-              user.kek, Buffer.from(newDek, "hex"));
-          res.status(200).json({
-            dek: dekClientEncrypted.toString("hex"),
-            newDek: newDekClientEncrypted.toString("hex"),
-          });
-          return;
-        }
-      }
-      throw new HexlinkError(404, "Key not found");
+      const {dek, newDek} = await getAndGenDeks(
+          req.body.keyId, user.kek, user);
+      await updateDeks(
+          decoded.uid,
+          {
+            [dek.keyId]: dek.server,
+            [newDek.keyId]: newDek.server,
+          }
+      );
+      res.status(200).json({dek: dek.client, newDek: newDek.client});
     } catch (err: unknown) {
       handleError(res, err);
     }
   });
 });
+
+const getAndGenDeks = async (keyId: string, kek: string, user: User) => {
+  const dekServerEncrypted = user.deks[keyId];
+  if (!dekServerEncrypted) {
+    throw new HexlinkError(404, "Key not found");
+  }
+  const newDek = crypto.randomBytes(32).toString("hex");
+  const [
+    decryptedDek, newDekServerEncrypted,
+  ] = await Promise.all([
+    decryptWithSymmKey(dekServerEncrypted),
+    encryptWithSymmKey(newDek),
+  ]);
+  const keyIdFromDek = sha256(Buffer.from(decryptedDek, "hex"));
+  if (keyIdFromDek.toString("hex") !== keyId) {
+    throw new HexlinkError(500, "server data corrupted");
+  }
+  const dekClientEncrypted = encrypt(
+      kek, Buffer.from(decryptedDek, "hex"));
+  const newKeyId = sha256(Buffer.from(newDek, "hex")).toString("hex");
+  const newDekClientEncrypted = encrypt(
+      kek, Buffer.from(newDek, "hex"));
+  return {
+    dek: {
+      keyId,
+      server: dekServerEncrypted,
+      client: dekClientEncrypted.toString("hex"),
+    },
+    newDek: {
+      keyId: newKeyId,
+      server: newDekServerEncrypted,
+      client: newDekClientEncrypted.toString("hex"),
+    },
+  };
+};
 
 const extractIdToken = (req: functions.Request) => {
   if ((!req.headers.authorization || !req.headers.authorization.startsWith("Bearer ")) &&
@@ -276,7 +315,7 @@ const validatePasskeySignature = (
     expected: string[][],
     authData: string, // hex
     signature: string, // hex
-    pubKey: string, // hex
+    pubKey: {x: string, y: string}, // hex
 ) => {
   const parsed = JSON.parse(clientDataJson);
   for (const [key, value] of expected) {
@@ -295,7 +334,15 @@ const validatePasskeySignature = (
   const signedDataHash = crypto.createHash("sha256")
       .update(signedData)
       .digest("hex");
-  if (!secp256r1.verify(Buffer.from(signature, "hex"), signedDataHash, pubKey)) {
+  const uncompressedPubKey = ethers.solidityPacked(
+      ["uint8", "uint256", "uint256"],
+      [4, "0x" + pubKey.x, "0x" + pubKey.y]
+  );
+  if (!secp256r1.verify(
+      Buffer.from(signature, "hex"),
+      signedDataHash,
+      uncompressedPubKey.slice(2) // remove "0x"
+  )) {
     throw new HexlinkError(400, "invalid signature");
   }
 };

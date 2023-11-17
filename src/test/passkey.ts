@@ -1,26 +1,27 @@
 import {secp256r1} from "@noble/curves/p256";
 import {PrivateKey} from "eciesjs";
 import crypto from "crypto";
+import {ethers} from "ethers";
 
 export interface Key {
     privKey: Uint8Array | Buffer,
-    pubKey: Uint8Array | Buffer,
+    pubKey: {x: string, y: string},
 }
 
 export const genPasskey = (): any => {
   const privKey = secp256r1.utils.randomPrivateKey();
   const pubKey = secp256r1.getPublicKey(privKey);
-  return {privKey, pubKey};
+  const point = secp256r1.ProjectivePoint.fromHex(pubKey);
+  const x = ethers.solidityPacked(["uint256"], [point.x]).slice(2);
+  const y = ethers.solidityPacked(["uint256"], [point.y]).slice(2);
+  return {privKey, pubKey: {x, y}};
 };
 
 export const signWithPasskey = (
-    data: any,
+    challenge: any,
     origin: string,
     passkey: any
 ) => {
-  const challenge = crypto.createHash("sha256").update(
-      JSON.stringify(data)
-  ).digest("hex");
   const clientDataJson = JSON.stringify({
     challenge,
     origin,
@@ -30,7 +31,8 @@ export const signWithPasskey = (
       .update(clientDataJson)
       .digest();
   const authData = Buffer.concat([
-    Buffer.from(passkey.pubKey),
+    Buffer.from(passkey.pubKey.x),
+    Buffer.from(passkey.pubKey.y),
     // sha256("somerandomdata")
     Buffer.from("dbdffb426fe23336753b7ccc6ced25bafea6616c92e8922a3d857d95cf30d4f0", "hex"),
   ]);
@@ -51,28 +53,38 @@ export const signWithPasskey = (
 
 export const signRegisterRequest = (
     username: string,
+    origin: string,
     kek: string,
     passkey: any
 ) => {
-  return signWithPasskey({
-    action: "register",
-    username,
-    kek,
-  }, "https://openid3.org", passkey);
+  const challenge = crypto.createHash("sha256").update(
+      Buffer.concat([
+        Buffer.from("register", "utf-8"), // action
+        Buffer.from(username, "utf-8"), // username
+        Buffer.from(kek, "hex"), // kek
+      ])
+  ).digest("base64");
+  return signWithPasskey(challenge, origin, passkey);
 };
 
 export const signLoginRequest = (
     uid: string,
+    origin: string,
+    dekId: string,
     kek: string,
     challenge: string,
     passkey: any
 ) => {
-  return signWithPasskey({
-    action: "login",
-    uid,
-    kek,
-    challenge,
-  }, "https://openid3.org", passkey);
+  const signedChallenge = crypto.createHash("sha256").update(
+      Buffer.concat([
+        Buffer.from("login", "utf-8"), // action
+        Buffer.from(uid, "hex"), // uid
+        Buffer.from(kek, "hex"), // kek
+        Buffer.from(dekId, "hex"), // dekId
+        Buffer.from(challenge, "hex"), // challenge
+      ])
+  ).digest("base64");
+  return signWithPasskey(signedChallenge, origin, passkey);
 };
 
 export const genEciesKey = () => {

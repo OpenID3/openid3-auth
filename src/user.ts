@@ -2,16 +2,17 @@
 
 import {Timestamp} from "@google-cloud/firestore";
 import * as admin from "firebase-admin";
-import {HexlinkError, epoch, sha3} from "./utils";
+import {HexlinkError, epoch} from "./utils";
+import {ethers} from "ethers";
 
 const firestore = () => {
   return admin.firestore();
 };
 
 export interface User {
-    passkey: string; // public key of passkey
+    passkey: {x: string, y: string}; // hex version of public key
     kek: string, // stored at client side to decrypt the dek from server
-    deks: string[], // stored at server side
+    deks: {[key: string]: string},
     loginStatus: {
         challenge: string,
         updatedAt: Timestamp,
@@ -25,19 +26,24 @@ export const INVALID_USER_NAME_EMTPY_LABEL =
   "invalid username: empty label";
 export const INVALID_USER_NAME_DISALLOWED_CHARACTERS =
   "invalid username: disallowed characters";
+export const INVALID_USER_NAME_NON_MIZU_NAME =
+  "invalid username: must end with mizu";
 
 export const genNameHash = (username: string) => {
   username = username.trim().toLowerCase();
   validateUsername(username);
-  const finalName = username + ".id";
-  return nameHash(finalName).toString("hex");
+  return nameHash(username).slice(2); // remove 0x
 };
 
+// the name is with .mizu suffix
 const validateUsername = (username: string) => {
-  if (username.length < 5) {
+  if (username.length < 10) {
     throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
   }
   const labels = username.split(".");
+  if (labels[labels.length - 1] != "mizu") {
+    throw new HexlinkError(400, INVALID_USER_NAME_NON_MIZU_NAME);
+  }
   for (const label of labels) {
     if (label.length == 0) {
       throw new HexlinkError(400, INVALID_USER_NAME_EMTPY_LABEL);
@@ -49,17 +55,23 @@ const validateUsername = (username: string) => {
   return username;
 };
 
-const nameHash = (name: string) : Buffer => {
+const nameHash = (name: string): string => {
   if (name == "") {
-    return Buffer.from("0000000000000000000000000000000000000000000000000000000000000000", "hex");
+    return ethers.ZeroHash;
   }
   const index = name.indexOf(".");
   if (index === -1) {
-    return sha3(Buffer.concat([nameHash(""), sha3(name)]));
+    return ethers.solidityPackedKeccak256(
+        ["bytes32", "bytes32"],
+        [nameHash(""), ethers.keccak256(ethers.toUtf8Bytes(name))]
+    );
   } else {
     const label = name.slice(0, index);
     const remainder = name.slice(index + 1);
-    return sha3(Buffer.concat([nameHash(remainder), sha3(label)]));
+    return ethers.solidityPackedKeccak256(
+        ["bytes32", "bytes32"],
+        [nameHash(remainder), ethers.keccak256(ethers.toUtf8Bytes(label))]
+    );
   }
 };
 
@@ -67,12 +79,12 @@ export async function createUser(
     uid: string,
     passkey: string,
     kek: string,
-    dek: string
+    deks: {[key: string]: string}
 ) {
   await firestore().collection("users").doc(uid).set({
     passkey,
     kek,
-    deks: [dek],
+    deks,
     createdAt: new Timestamp(epoch(), 0),
     loginStatus: {
       challenge: "",
@@ -110,9 +122,14 @@ export async function preAuth(uid: string, challenge: string) {
   });
 }
 
-export async function postAuth(uid: string, kek: string) {
+export async function postAuth(
+    uid: string,
+    kek: string,
+    deks: {[key: string]: string}
+) {
   await firestore().collection("users").doc(uid).update({
     kek,
+    deks,
     loginStatus: {
       challenge: "",
       updatedAt: new Timestamp(epoch(), 0),
@@ -120,8 +137,9 @@ export async function postAuth(uid: string, kek: string) {
   });
 }
 
-export async function rotateDek(uid: string, oldDek: string, newDek: string) {
-  await firestore().collection("users").doc(uid).update({
-    deks: [oldDek, newDek],
-  });
+export async function updateDeks(
+    uid: string,
+    deks: {[key: string]: string}
+) {
+  await firestore().collection("users").doc(uid).update({deks});
 }

@@ -1,7 +1,3 @@
-import * as admin from "firebase-admin";
-
-admin.initializeApp();
-
 import * as auth from "./auth";
 
 exports.isNameRegistered = auth.isNameRegistered;
