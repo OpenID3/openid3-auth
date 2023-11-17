@@ -11,6 +11,7 @@ import {
   epoch,
   handleError,
   sha256,
+  genNameHash,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {
@@ -21,13 +22,13 @@ import {
 import {
   User,
   createUser,
-  genNameHash,
   getUser,
   postAuth,
   preAuth,
   updateDeks,
   userExist,
-} from "./user";
+} from "./db";
+
 
 const secrets = functions.config().doppler || {};
 
@@ -234,7 +235,8 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
 export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
   cors({origin: true})(req, res, async () => {
     try {
-      const decoded = await admin.auth().verifyIdToken(extractIdToken(req));
+      const firebaseIdToken = extractFirebaseIdToken(req);
+      const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
       const user = await getUser(decoded.uid);
       if (user == null) {
         throw new HexlinkError(404, "User not found");
@@ -290,7 +292,7 @@ const getAndGenDeks = async (keyId: string, kek: string, user: User) => {
   };
 };
 
-const extractIdToken = (req: functions.Request) => {
+export const extractFirebaseIdToken = (req: functions.Request) => {
   if ((!req.headers.authorization || !req.headers.authorization.startsWith("Bearer ")) &&
       !(req.cookies && req.cookies.__session)) {
     functions.logger.error(
