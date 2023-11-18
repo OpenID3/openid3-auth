@@ -5,7 +5,7 @@ import axios from "axios";
 import * as jose from "jose";
 
 import {HexlinkError, handleError} from "./utils";
-import {getZkp, postZkpRequest} from "./db";
+import {addZkProof, getZkp, postZkpRequest} from "./db";
 import {defineSecret} from "firebase-functions/params";
 import {extractFirebaseIdToken} from "./auth";
 
@@ -78,7 +78,7 @@ export const queryZkProof = functions.https.onRequest((req, res) => {
       const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
       const zkp = await getZkp(decoded.uid);
       if (zkp == null || zkp.idTokenHash != req.body.idTokenHash) {
-        throw new HexlinkError(404, "id token not found");
+        throw new HexlinkError(400, "id token not found");
       }
       if (zkp.status === "processing") {
         res.status(200).json({status: "processing"});
@@ -87,6 +87,56 @@ export const queryZkProof = functions.https.onRequest((req, res) => {
       } else if (zkp.status === "done") {
         res.status(200).json({status: "done", proof: zkp.proof});
       }
+    } catch (err: unknown) {
+      handleError(res, err);
+    }
+  });
+});
+
+/**
+ * req.body: {
+ *   uid: string;
+ *   status: "error" | "done",
+ *   proof?: string,
+ *   error?: string,
+ * }
+ *
+ * res: {
+ *   success: boolean,
+ * }
+ */
+export const storeZkProof = functions.runWith({
+  secrets: [ZKP_SERVICE_SECRET],
+}).https.onRequest((req, res) => {
+  return cors({origin: true})(req, res, async () => {
+    try {
+      const accessToken = extractFirebaseIdToken(req);
+      if (accessToken !== ZKP_SERVICE_SECRET.value()) {
+        throw new HexlinkError(401, "unauthorized");
+      }
+      const zkp = await getZkp(req.body.uid);
+      if (zkp == null || zkp.status !== "processing") {
+        throw new HexlinkError(400, "no active zkp request");
+      }
+      if (req.body.status === "done") {
+        if (req.body.proof == null) {
+          throw new HexlinkError(400, "proof is required");
+        }
+      } else if (req.body.status === "error") {
+        if (req.body.error == null) {
+          throw new HexlinkError(400, "error message is required");
+        }
+      } else {
+        throw new HexlinkError(400, "invalid status");
+      }
+      await addZkProof(
+          req.body.uid,
+          req.body.idToken,
+          req.body.status,
+          req.body.proof,
+          req.body.error,
+      );
+      res.status(200).json({success: true});
     } catch (err: unknown) {
       handleError(res, err);
     }

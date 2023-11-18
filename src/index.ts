@@ -9,3 +9,4 @@ exports.getDataEncryptionKey = auth.getDataEncryptionKey;
 
 exports.requestZkProof = zkp.requestZkProof;
 exports.queryZkProof = zkp.queryZkProof;
+exports.storeZkProof = zkp.storeZkProof;
