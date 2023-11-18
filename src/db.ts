@@ -112,20 +112,18 @@ export async function postZkpRequest(
 ) {
   await firestore().collection("zkp").doc(uid).update({
     status: "processing",
-    idTokenHash: sha256(idToken),
+    idTokenHash: sha256(idToken).toString("hex"),
   });
 }
 
 export async function addZkProof(
     uid: string,
-    idToken: string,
     status: "processing" | "done" | "error",
     proof: string | null,
     error: string | null,
 ) {
   await firestore().collection("zkp").doc(uid).update({
     status,
-    idTokenHash: sha256(idToken),
     proof,
     error,
   });

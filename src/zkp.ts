@@ -4,7 +4,7 @@ import * as admin from "firebase-admin";
 import axios from "axios";
 import * as jose from "jose";
 
-import {HexlinkError, handleError} from "./utils";
+import {HexlinkError, handleError, sha256} from "./utils";
 import {addZkProof, getZkp, postZkpRequest} from "./db";
 import {defineSecret} from "firebase-functions/params";
 import {extractFirebaseIdToken} from "./auth";
@@ -96,6 +96,7 @@ export const queryZkProof = functions.https.onRequest((req, res) => {
 /**
  * req.body: {
  *   uid: string;
+ *   idToken: string;
  *   status: "error" | "done",
  *   proof?: string,
  *   error?: string,
@@ -104,6 +105,8 @@ export const queryZkProof = functions.https.onRequest((req, res) => {
  * res: {
  *   success: boolean,
  * }
+ *
+ * This can only be called by the zkp service.
  */
 export const storeZkProof = functions.runWith({
   secrets: [ZKP_SERVICE_SECRET],
@@ -115,7 +118,10 @@ export const storeZkProof = functions.runWith({
         throw new HexlinkError(401, "unauthorized");
       }
       const zkp = await getZkp(req.body.uid);
-      if (zkp == null || zkp.status !== "processing") {
+      if (zkp == null ||
+        zkp.status !== "processing" ||
+        zkp.idTokenHash !== sha256(req.body.idToken).toString("hex")
+      ) {
         throw new HexlinkError(400, "no active zkp request");
       }
       if (req.body.status === "done") {
@@ -131,7 +137,6 @@ export const storeZkProof = functions.runWith({
       }
       await addZkProof(
           req.body.uid,
-          req.body.idToken,
           req.body.status,
           req.body.proof,
           req.body.error,
