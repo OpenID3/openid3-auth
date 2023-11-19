@@ -7,6 +7,6 @@ exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
 exports.getDataEncryptionKey = auth.getDataEncryptionKey;
 
-exports.requestZkProof = zkp.requestZkProof;
-exports.queryZkProof = zkp.queryZkProof;
+exports.requestToReset = zkp.requestToReset;
+exports.queryResetStatus = zkp.queryResetStatus;
 exports.storeZkProof = zkp.storeZkProof;

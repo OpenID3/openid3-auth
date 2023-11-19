@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
-import {epoch, sha256} from "./utils";
+import {epoch} from "./utils";
 import {Timestamp} from "firebase-admin/firestore";
+import {Chain, JwtInput, OidcZkProof, UserOperationStruct} from "./userop";
 
 export interface User {
     passkey: {x: string, y: string}; // hex version of public key
@@ -88,10 +89,12 @@ export async function updateDeks(
 
 export interface ZKP {
     uid: string;
-    idTokenHash: string;
     status: "processing" | "done" | "error";
-    proof: string | null; // for done status
+    proof: OidcZkProof | null; // for done status
     error: string | null; // for error status
+    chain: Chain,
+    userOp: UserOperationStruct;
+    jwtInput: JwtInput,
     createdAt: Timestamp;
     finishedAt: Timestamp | null;
 }
@@ -106,25 +109,38 @@ export async function getZkp(
   return null;
 }
 
-export async function postZkpRequest(
+export async function addNewZkpRequest(
     uid: string,
-    idToken: string,
+    jwtInput: JwtInput,
+    chain: Chain,
+    userOp: UserOperationStruct,
 ) {
   await firestore().collection("zkp").doc(uid).update({
     status: "processing",
-    idTokenHash: sha256(idToken).toString("hex"),
+    jwtInput,
+    chain,
+    userOp,
+    createdAt: new Timestamp(epoch(), 0),
   });
 }
 
 export async function addZkProof(
     uid: string,
-    status: "processing" | "done" | "error",
-    proof: string | null,
-    error: string | null,
+    proof: string,
 ) {
   await firestore().collection("zkp").doc(uid).update({
-    status,
+    status: "done",
     proof,
+  });
+}
+
+export async function markZkProofError(
+    uid: string,
+    error: string,
+) {
+  await firestore().collection("zkp").doc(uid).update({
+    status: "error",
     error,
   });
 }
+

@@ -29,7 +29,6 @@ import {
   userExist,
 } from "./db";
 
-
 const secrets = functions.config().doppler || {};
 
 /**
