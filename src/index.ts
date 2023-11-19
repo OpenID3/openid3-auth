@@ -9,4 +9,4 @@ exports.getDataEncryptionKey = auth.getDataEncryptionKey;
 
 exports.requestToReset = zkp.requestToReset;
 exports.queryResetStatus = zkp.queryResetStatus;
-exports.storeZkProof = zkp.storeZkProof;
+exports.submitZkProof = zkp.submitZkProof;

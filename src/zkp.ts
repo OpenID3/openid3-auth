@@ -134,7 +134,7 @@ export const queryResetStatus = functions.https.onRequest((req, res) => {
  *
  * This can only be called by the zkp service.
  */
-export const storeZkProof = functions
+export const submitZkProof = functions
     .runWith({
       secrets: [ZKP_SERVICE_SECRET],
     })
