@@ -115,7 +115,7 @@ export async function addNewZkpRequest(
     chain: Chain,
     userOp: UserOperationStruct,
 ) {
-  await firestore().collection("zkp").doc(uid).update({
+  await firestore().collection("zkp").doc(uid).set({
     status: "processing",
     jwtInput,
     chain,

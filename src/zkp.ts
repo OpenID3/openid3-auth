@@ -62,9 +62,9 @@ export const requestToReset = functions
           const firebaseIdToken = extractFirebaseIdToken(req);
           const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
           const jwtInput = await genJwtInput(
+              decoded.uid,
               req.body.provider,
               req.body.idToken,
-              decoded.uid
           );
           const zkp = await getZkp(decoded.uid);
           if (zkp && zkp.status === "processing") {
@@ -91,7 +91,9 @@ export const requestToReset = functions
     });
 
 /**
- * req.body: { }
+ * req.body: {
+ *    chain: Chain,
+ * }
  *
  * res: {
  *    status: "processing" | "error" | "done",
@@ -106,7 +108,7 @@ export const queryResetStatus = functions.https.onRequest((req, res) => {
       const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
       const zkp = await getZkp(decoded.uid);
       if (!zkp) {
-        throw new HexlinkError(400, "id token not found");
+        throw new HexlinkError(404, "id token not found");
       }
       const userOpHash = await genUserOpHash(zkp.chain, zkp.userOp);
       if (zkp.status === "processing") {
