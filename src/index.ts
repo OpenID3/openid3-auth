@@ -1,3 +1,6 @@
+import * as admin from "firebase-admin";
+admin.initializeApp();
+
 import * as auth from "./auth";
 import * as zkp from "./zkp";
 
