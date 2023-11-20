@@ -45,6 +45,7 @@ const GOOGLE_JWKS = jose.createLocalJWKSet({
  *   idToken: string,
  *   chain: Chain,
  *   userOp: UserOpStruct,
+ *   dev: boolean,
  * }
  *
  * res: {
@@ -75,11 +76,13 @@ export const requestToReset = functions
               req.body.chain,
               req.body.userOp
           );
-          await requestZkp(
-              decoded.uid,
-              req.body.idToken,
-              ZKP_SERVICE_SECRET.value()
-          );
+          if (!req.body.dev) {
+            await requestZkp(
+                decoded.uid,
+                req.body.idToken,
+                ZKP_SERVICE_SECRET.value()
+            );
+          }
           res.status(200).json({status: "processing"});
         } catch (err: unknown) {
           handleError(res, err);
