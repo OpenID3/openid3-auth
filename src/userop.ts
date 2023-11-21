@@ -2,6 +2,10 @@ import {AddressLike, BigNumberish, BytesLike, ethers} from "ethers";
 import {StaticJsonRpcProvider} from "@ethersproject/providers";
 import {deepHexlify} from "@account-abstraction/utils";
 import {GoogleZkAdmin} from "@openid3/contracts";
+import base64url from "base64url";
+import * as functions from "firebase-functions";
+
+const secrets = functions.config().doppler || {};
 
 export type UserOperationStruct = {
     sender: AddressLike;
@@ -39,7 +43,7 @@ export interface Chain {
 }
 
 export const getPimlicoBundler = (chain: Chain) => {
-  const apiKey = process.env.PIMLICO_API_KEY;
+  const apiKey = secrets.PIMLICO_API_KEY;
   return new StaticJsonRpcProvider(
       `https://api.pimlico.io/v1/${chain.name}/rpc?apikey=${apiKey}`
   );
@@ -92,6 +96,7 @@ export async function submitUserOp(chain: Chain, op: UserOperationStruct) {
     hexifiedUserOp,
     ENTRY_POINT_ADDRESS,
   ]);
+  console.log("UserOperation: ", uoHash);
   return uoHash;
 }
 
@@ -110,6 +115,7 @@ export function genZkAdminSignature(
     jwt: JwtInput,
     proof: OidcZkProof,
 ): string {
+  const jwtSignature = "0x" + base64url.toBuffer(jwt.jwtSignature).toString("hex");
   const validationData = ethers.AbiCoder.defaultAbiCoder().encode(
       ["tuple(tuple(bytes32, string, bytes32, bytes), bytes32, bytes)"],
       [
@@ -118,7 +124,7 @@ export function genZkAdminSignature(
             jwt.kidSha256,
             jwt.iat,
             jwt.jwtHeaderAndPayloadHash,
-            jwt.jwtSignature,
+            jwtSignature,
           ],
           proof.verifier_digest,
           proof.proof,
@@ -126,5 +132,5 @@ export function genZkAdminSignature(
       ]
   );
   return ethers.solidityPacked(
-      ["uint8", "bytes"], [1, validationData]);
+      ["uint8", "bytes"], [0, validationData]);
 }

@@ -147,7 +147,8 @@ export const submitZkProof = functions
       return cors({origin: true})(req, res, async () => {
         try {
           const accessToken = extractFirebaseIdToken(req);
-          if (accessToken !== ZKP_SERVICE_SECRET.value()) {
+          const secret = ZKP_SERVICE_SECRET.value();
+          if (secret && accessToken !== secret) {
             throw new HexlinkError(401, "unauthorized");
           }
           const zkp = await getZkp(req.body.uid);

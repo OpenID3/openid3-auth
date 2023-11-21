@@ -2,26 +2,28 @@ import axios from "axios";
 import {Command, OptionValues} from "commander";
 import * as fs from "fs";
 
+const URL_PREFIX = "https://us-central1-openid3-bbd1b.cloudfunctions.net/";
+const LOCAL_URL_PREFIX = "http://127.0.0.1:5001/openid3-bbd1b/us-central1/submitZkProof";
+
 export async function callFirebaseFunction(
-    func: string,
     data: unknown,
     token?: string
 ) {
-  const urlPrefix = `https://us-central1-${process.env.VITE_FIREBASE_PROJECT_ID}.cloudfunctions.net/`;
   const config = token ? {headers: {"Authorization": "Bearer " + token}} : {};
-  return await axios.post(`${urlPrefix}${func}`, data, config);
+  const url = process.env.NODE_ENV === "production" ? URL_PREFIX : LOCAL_URL_PREFIX;
+  return await axios.post(url, data, config);
 }
 
 export async function submitZkpProof(options: OptionValues) {
   const proof = fs.readFileSync(options.proof, "utf-8");
   const result = await callFirebaseFunction(
-      "submitZkProof",
       {
         uid: options.uid,
         idToken: options.idtoken,
         success: true,
         proof: JSON.parse(proof),
-      }
+      },
+      "randomsecret"
   );
   if (!result.data || !result.data.success) {
     throw new Error("failed to submit zkp proof");
