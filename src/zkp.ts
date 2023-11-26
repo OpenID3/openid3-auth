@@ -152,8 +152,8 @@ export const submitZkProof = functions
             throw new HexlinkError(401, "unauthorized");
           }
           const zkp = await getZkp(req.body.uid);
-          if (zkp == null || zkp.status !== "processing") {
-            throw new HexlinkError(400, "no active zkp request");
+          if (!zkp || zkp.status !== "processing") {
+            throw new HexlinkError(404, "zkp request not found");
           }
           if (req.body.success) {
             if (req.body.proof == null) {

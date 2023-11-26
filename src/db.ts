@@ -1,45 +1,81 @@
 import * as admin from "firebase-admin";
-import {epoch} from "./utils";
+import {HexlinkError, epoch} from "./utils";
 import {Timestamp} from "firebase-admin/firestore";
 import {Chain, JwtInput, OidcZkProof, UserOperationStruct} from "./userop";
 
+export interface Passkey {
+  x: string; // pubKeyX
+  y: string; // pubKeyY
+  id: string;
+}
+
+// use address as key for user
 export interface User {
-    passkey: {x: string, y: string}; // hex version of public key
-    kek: string, // stored at client side to decrypt the dek from server
-    deks: {[key: string]: string},
+    passkey: Passkey;
+    operator: string; // operator address
+    kek: string; // stored at client side to decrypt the dek from server
+    deks: {[key: string]: string};
     loginStatus: {
         challenge: string,
         updatedAt: Timestamp,
-    }
+    };
     createdAt: Timestamp;
+}
+
+export interface NameData {
+  address: string;
 }
 
 const firestore = () => {
   return admin.firestore();
 };
 
-export async function createUser(
+export async function resolveName(
+    uid: string
+) {
+  const name = await firestore().collection("mns").doc(uid).get();
+  if (name && name.exists) {
+    return (name.data() as NameData).address;
+  }
+  return null;
+}
+
+export async function registerUser(
     uid: string,
+    address: string,
     passkey: string,
+    operator: string,
     kek: string,
     deks: {[key: string]: string}
 ) {
-  await firestore().collection("users").doc(uid).set({
-    passkey,
-    kek,
-    deks,
-    createdAt: new Timestamp(epoch(), 0),
-    loginStatus: {
-      challenge: "",
-      updatedAt: new Timestamp(epoch(), 0),
-    },
+  const db = firestore();
+  const nsRef = db.collection("mns").doc(uid);
+  const userRef = db.collection("users").doc(address);
+  await db.runTransaction(async (t) => {
+    const doc = await t.get(nsRef);
+    if (doc && doc.exists) {
+      throw new HexlinkError(400, "name already taken");
+    }
+    t.set(nsRef, {address});
+    t.set(userRef, {
+      passkey,
+      operator,
+      kek,
+      deks,
+      createdAt: new Timestamp(epoch(), 0),
+      loginStatus: {
+        challenge: "",
+        updatedAt: new Timestamp(epoch(), 0),
+      },
+    });
   });
 }
 
 export async function getUser(
-    uid: string,
+    address: string,
 ) : Promise<User | null> {
-  const result = await firestore().collection("users").doc(uid).get();
+  const result = await firestore().collection(
+      "users").doc(address).get();
   if (result && result.exists) {
     return result.data() as User;
   }
@@ -47,17 +83,18 @@ export async function getUser(
 }
 
 export async function userExist(
-    uid: string,
+    address: string,
 ) : Promise<boolean> {
-  const result = await firestore().collection("users").doc(uid).get();
+  const result = await firestore().collection(
+      "users").doc(address).get();
   if (result && result.exists) {
     return true;
   }
   return false;
 }
 
-export async function preAuth(uid: string, challenge: string) {
-  await firestore().collection("users").doc(uid).update({
+export async function preAuth(address: string, challenge: string) {
+  await firestore().collection("users").doc(address).update({
     loginStatus: {
       challenge: challenge,
       updatedAt: new Timestamp(epoch(), 0),
@@ -66,11 +103,11 @@ export async function preAuth(uid: string, challenge: string) {
 }
 
 export async function postAuth(
-    uid: string,
+    address: string,
     kek: string,
     deks: {[key: string]: string}
 ) {
-  await firestore().collection("users").doc(uid).update({
+  await firestore().collection("users").doc(address).update({
     kek,
     deks,
     loginStatus: {
@@ -81,10 +118,10 @@ export async function postAuth(
 }
 
 export async function updateDeks(
-    uid: string,
+    address: string,
     deks: {[key: string]: string}
 ) {
-  await firestore().collection("users").doc(uid).update({deks});
+  await firestore().collection("users").doc(address).update({deks});
 }
 
 export interface ZKP {

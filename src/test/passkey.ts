@@ -8,19 +8,19 @@ export interface Key {
     pubKey: {x: string, y: string},
 }
 
-export const genPasskey = (): any => {
+export const genPasskey = (id: string): any => {
   const privKey = secp256r1.utils.randomPrivateKey();
   const pubKey = secp256r1.getPublicKey(privKey);
   const point = secp256r1.ProjectivePoint.fromHex(pubKey);
   const x = ethers.solidityPacked(["uint256"], [point.x]).slice(2);
   const y = ethers.solidityPacked(["uint256"], [point.y]).slice(2);
-  return {privKey, pubKey: {x, y}};
+  return {privKey, pubKey: {x, y}, id};
 };
 
 export const signWithPasskey = (
     challenge: any,
     origin: string,
-    passkey: any
+    passkey: any,
 ) => {
   const clientDataJson = JSON.stringify({
     challenge,
@@ -52,15 +52,17 @@ export const signWithPasskey = (
 };
 
 export const signRegisterRequest = (
-    username: string,
+    address: string,
     origin: string,
     kek: string,
-    passkey: any
+    passkey: any,
+    operator: string,
 ) => {
   const challenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("register", "utf-8"), // action
-        Buffer.from(username, "utf-8"), // username
+        Buffer.from(address, "hex"), // address
+        Buffer.from(operator, "hex"), // operator
         Buffer.from(kek, "hex"), // kek
       ])
   ).digest("base64");
@@ -68,17 +70,17 @@ export const signRegisterRequest = (
 };
 
 export const signLoginRequest = (
-    uid: string,
+    address: string,
     origin: string,
     dekId: string,
     kek: string,
     challenge: string,
-    passkey: any
+    passkey: any,
 ) => {
   const signedChallenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("login", "utf-8"), // action
-        Buffer.from(uid, "hex"), // uid
+        Buffer.from(address, "hex"), // address
         Buffer.from(kek, "hex"), // kek
         Buffer.from(dekId, "hex"), // dekId
         Buffer.from(challenge, "hex"), // challenge

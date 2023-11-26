@@ -9,9 +9,9 @@ import {ethers} from "ethers";
 import {
   HexlinkError,
   epoch,
+  genNameHash,
   handleError,
   sha256,
-  genNameHash,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {
@@ -21,36 +21,50 @@ import {
 } from "./ratelimiter";
 import {
   User,
-  createUser,
   getUser,
   postAuth,
   preAuth,
+  registerUser,
+  resolveName,
   updateDeks,
-  userExist,
 } from "./db";
+import {getAccountAddress} from "./account";
 
 const secrets = functions.config().doppler || {};
 
 /**
  * req.body: {
- *   username: string,
+ *   uid: string,
  * }
  *
  * res: {
  *   registered: boolean,
+ *   address?: string,
+ *   operator?: string,
+ *   passkey?: Passkey,
  * }
  */
-export const isNameRegistered = functions.https.onRequest((req, res) => {
+export const getUserByUid = functions.https.onRequest((req, res) => {
   return cors({origin: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const uid = genNameHash(req.body.username);
-      if (await userExist(uid)) {
+      const address = await resolveName(req.body.uid);
+      if (!address) {
         res.status(200).json({registered: false});
       } else {
-        res.status(200).json({registered: true});
+        const user = await getUser(address);
+        if (user) {
+          res.status(200).json({
+            registered: true,
+            address,
+            operator: user.operator,
+            passkey: user.passkey,
+          });
+        } else {
+          throw new HexlinkError(500, "user data lost");
+        }
       }
     } catch (err: unknown) {
       handleError(res, err);
@@ -61,7 +75,12 @@ export const isNameRegistered = functions.https.onRequest((req, res) => {
 /**
  * req.body: {
  *  username: string,
- *  passkey: string, // hex
+ *  operator: string,
+ *  passkey: {
+ *    id: string,
+ *    pubKeyX: string,
+ *    pubKeyY: string,
+ *  },
  *  kek: string, // hex
  *  clientDataJson: string,
  *  authData: string, // hex
@@ -69,97 +88,102 @@ export const isNameRegistered = functions.https.onRequest((req, res) => {
  * }
  *
  * res: {
+ *   address: string,
  *   token: string,
  *   dek: string, // base64
- *   uid: string
  * }
  */
-export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
-  return cors({origin: true})(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
-        throw new HexlinkError(429, "Too many requests");
+export const registerUserWithPasskey =
+  functions.https.onRequest((req, res) => {
+    return cors({origin: true})(req, res, async () => {
+      try {
+        if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
+          throw new HexlinkError(429, "Too many requests");
+        }
+        const uid = genNameHash(req.body.username);
+        const address = getAccountAddress(
+            req.body.passkey, req.body.operator);
+        const challenge = crypto.createHash("sha256").update(
+            Buffer.concat([
+              Buffer.from("register", "utf-8"), // action
+              Buffer.from(address, "hex"), // address
+              Buffer.from(req.body.operator, "hex"), // operator
+              Buffer.from(req.body.kek, "hex"), // kek
+            ])
+        ).digest("base64");
+        validatePasskeySignature(
+            req.body.clientDataJson,
+            [
+              ["challenge", challenge],
+              ["origin", secrets.ORIGIN],
+            ],
+            req.body.authData,
+            req.body.signature,
+            req.body.passkey,
+        );
+        const newDek = crypto.randomBytes(32).toString("hex");
+        const dekId = sha256(newDek).toString("hex");
+        const newDekClientEncrypted = encrypt(
+            req.body.kek, Buffer.from(newDek));
+
+        await registerUser(
+            uid,
+            address,
+            req.body.passkey,
+            req.body.operator,
+            req.body.kek,
+            {[dekId]: await encryptWithSymmKey(newDek)}
+        );
+        await admin.auth().createUser({uid});
+        const token = await admin.auth().createCustomToken(uid);
+        res.status(200).json({
+          address,
+          token: token,
+          dek: newDekClientEncrypted.toString("hex"),
+        });
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const uid = genNameHash(req.body.username);
-      const user = await getUser(uid);
-      if (user != null) {
-        throw new HexlinkError(400, "user already exists");
-      }
-      const challenge = crypto.createHash("sha256").update(
-          Buffer.concat([
-            Buffer.from("register", "utf-8"), // action
-            Buffer.from(req.body.username, "utf-8"), // uid
-            Buffer.from(req.body.kek, "hex"), // kek
-          ])
-      ).digest("base64");
-      validatePasskeySignature(
-          req.body.clientDataJson,
-          [
-            ["challenge", challenge],
-            ["origin", secrets.ORIGIN],
-          ],
-          req.body.authData,
-          req.body.signature,
-          req.body.passkey,
-      );
-      const newDek = crypto.randomBytes(32).toString("hex");
-      const dekId = sha256(newDek).toString("hex");
-      const newDekClientEncrypted = encrypt(req.body.kek, Buffer.from(newDek));
-      await createUser(
-          uid,
-          req.body.passkey,
-          req.body.kek,
-          {[dekId]: await encryptWithSymmKey(newDek)}
-      );
-      await admin.auth().createUser({uid});
-      const token = await admin.auth().createCustomToken(uid);
-      res.status(200).json({
-        token: token,
-        dek: newDekClientEncrypted.toString("hex"),
-        uid,
-      });
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
+    });
   });
-});
 
 /**
  * req.body: {
- *  uid: string,
+ *  address: string,
  * }
  *
  * res: {
  *   challenge: string, // hex
  * }
  */
-export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
-  cors({origin: true})(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && await getChallengeRateLimit(req.ip || "")) {
-        throw new HexlinkError(429, "Too many requests");
-      }
-      const user = await getUser(req.body.uid);
-      if (user == null) {
-        throw new HexlinkError(404, "User not found");
-      }
-      if (user.loginStatus.challenge.length > 0 &&
+export const getPasskeyChallenge =
+  functions.https.onRequest((req, res) => {
+    cors({origin: true})(req, res, async () => {
+      try {
+        if (secrets.ENV !== "dev" && await getChallengeRateLimit(req.ip || "")) {
+          throw new HexlinkError(429, "Too many requests");
+        }
+        const user = await getUser(req.body.address);
+        if (user == null) {
+          throw new HexlinkError(404, "User not found");
+        }
+        if (user.loginStatus.challenge.length > 0 &&
         user.loginStatus.updatedAt.seconds + 180 > epoch()) {
-        res.status(200).json({challenge: user.loginStatus.challenge});
-      } else {
-        const challenge = crypto.randomBytes(32).toString("hex");
-        await preAuth(req.body.uid, challenge);
-        res.status(200).json({challenge});
+          res.status(200).json({challenge: user.loginStatus.challenge});
+        } else {
+          const challenge = crypto.randomBytes(32).toString("hex");
+          await preAuth(req.body.address, challenge);
+          res.status(200).json({challenge});
+        }
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
+    });
   });
-});
 
-/**
+/*
  * req.body: {
- *   uid: string,
+ *   address: string,
  *   dekId: string,
  *   kek: string, // hex
  *   clientDataJson: string,
@@ -173,53 +197,55 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *   newDek: string,
  * }
  */
-export const loginWithPasskey = functions.https.onRequest((req, res) => {
-  cors({origin: true})(req, res, async () => {
-    try {
-      const user = await getUser(req.body.uid);
-      if (user == null) {
-        throw new HexlinkError(404, "User not found");
-      }
-      if (user.loginStatus.challenge.length > 0 &&
+export const loginWithPasskey =
+  functions.https.onRequest((req, res) => {
+    cors({origin: true})(req, res, async () => {
+      try {
+        const user = await getUser(req.body.address);
+        if (user == null) {
+          throw new HexlinkError(404, "User not found");
+        }
+        if (user.loginStatus.challenge.length > 0 &&
           user.loginStatus.updatedAt.seconds + 180 < epoch()) {
-        throw new HexlinkError(403, "invalid challenge");
+          throw new HexlinkError(403, "invalid challenge");
+        }
+        const challenge = crypto.createHash("sha256").update(
+            Buffer.concat([
+              Buffer.from("login", "utf-8"), // action
+              Buffer.from(req.body.address, "hex"), // address
+              Buffer.from(req.body.kek, "hex"), // kek
+              Buffer.from(req.body.dekId, "hex"), // dekId
+              Buffer.from(user.loginStatus.challenge, "hex"), // challenge
+            ])
+        ).digest("base64");
+        validatePasskeySignature(
+            req.body.clientDataJson,
+            [
+              ["challenge", challenge],
+              ["origin", secrets.ORIGIN],
+            ],
+            req.body.authData,
+            req.body.signature,
+            user.passkey,
+        );
+        const {dek, newDek} = await getAndGenDeks(
+            req.body.dekId, req.body.kek, user);
+        await postAuth(req.body.address, req.body.kek, {
+          [dek.keyId]: dek.server,
+          [newDek.keyId]: newDek.server,
+        });
+        const token = await admin.auth().createCustomToken(
+            req.body.address);
+        res.status(200).json({
+          token: token,
+          dek: dek.client,
+          newDek: newDek.client,
+        });
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const challenge = crypto.createHash("sha256").update(
-          Buffer.concat([
-            Buffer.from("login", "utf-8"), // action
-            Buffer.from(req.body.uid, "hex"), // uid
-            Buffer.from(req.body.kek, "hex"), // kek
-            Buffer.from(req.body.dekId, "hex"), // dekId
-            Buffer.from(user.loginStatus.challenge, "hex"), // challenge
-          ])
-      ).digest("base64");
-      validatePasskeySignature(
-          req.body.clientDataJson,
-          [
-            ["challenge", challenge],
-            ["origin", secrets.ORIGIN],
-          ],
-          req.body.authData,
-          req.body.signature,
-          user.passkey,
-      );
-      const {dek, newDek} = await getAndGenDeks(
-          req.body.dekId, req.body.kek, user);
-      await postAuth(req.body.uid, req.body.kek, {
-        [dek.keyId]: dek.server,
-        [newDek.keyId]: newDek.server,
-      });
-      const token = await admin.auth().createCustomToken(req.body.uid);
-      res.status(200).json({
-        token: token,
-        dek: dek.client,
-        newDek: newDek.client,
-      });
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
+    });
   });
-});
 
 /**
  * req.body: {
@@ -231,30 +257,31 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
  *   newDek: string,
  * }
  */
-export const getDataEncryptionKey = functions.https.onRequest((req, res) => {
-  cors({origin: true})(req, res, async () => {
-    try {
-      const firebaseIdToken = extractFirebaseIdToken(req);
-      const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
-      const user = await getUser(decoded.uid);
-      if (user == null) {
-        throw new HexlinkError(404, "User not found");
+export const getDataEncryptionKey =
+  functions.https.onRequest((req, res) => {
+    cors({origin: true})(req, res, async () => {
+      try {
+        const firebaseIdToken = extractFirebaseIdToken(req);
+        const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
+        const user = await getUser(decoded.uid);
+        if (user == null) {
+          throw new HexlinkError(404, "User not found");
+        }
+        const {dek, newDek} = await getAndGenDeks(
+            req.body.keyId, user.kek, user);
+        await updateDeks(
+            decoded.uid,
+            {
+              [dek.keyId]: dek.server,
+              [newDek.keyId]: newDek.server,
+            }
+        );
+        res.status(200).json({dek: dek.client, newDek: newDek.client});
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const {dek, newDek} = await getAndGenDeks(
-          req.body.keyId, user.kek, user);
-      await updateDeks(
-          decoded.uid,
-          {
-            [dek.keyId]: dek.server,
-            [newDek.keyId]: newDek.server,
-          }
-      );
-      res.status(200).json({dek: dek.client, newDek: newDek.client});
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
+    });
   });
-});
 
 const getAndGenDeks = async (keyId: string, kek: string, user: User) => {
   const dekServerEncrypted = user.deks[keyId];
