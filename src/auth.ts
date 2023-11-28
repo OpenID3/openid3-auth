@@ -45,7 +45,7 @@ const secrets = functions.config().doppler || {};
  * }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true})(req, res, async () => {
+  return cors({origin: true, credentials: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
@@ -95,7 +95,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  */
 export const registerUserWithPasskey =
   functions.https.onRequest((req, res) => {
-    return cors({origin: true})(req, res, async () => {
+    return cors({origin: true, credentials: true})(req, res, async () => {
       try {
         if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
           throw new HexlinkError(429, "Too many requests");
@@ -158,7 +158,7 @@ export const registerUserWithPasskey =
  */
 export const getPasskeyChallenge =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         if (secrets.ENV !== "dev" && await getChallengeRateLimit(req.ip || "")) {
           throw new HexlinkError(429, "Too many requests");
@@ -199,7 +199,7 @@ export const getPasskeyChallenge =
  */
 export const loginWithPasskey =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         const user = await getUser(req.body.address);
         if (user == null) {
@@ -259,7 +259,7 @@ export const loginWithPasskey =
  */
 export const getDataEncryptionKey =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         const firebaseIdToken = extractFirebaseIdToken(req);
         const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
