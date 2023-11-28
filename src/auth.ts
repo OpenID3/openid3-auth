@@ -115,7 +115,7 @@ export const registerUserWithPasskey =
             req.body.clientDataJson,
             [
               ["challenge", challenge],
-              ["origin", secrets.MIZU_ORIGIN],
+              ["origin", secrets.ORIGIN],
             ],
             req.body.authData,
             req.body.signature,
@@ -221,7 +221,7 @@ export const loginWithPasskey =
             req.body.clientDataJson,
             [
               ["challenge", challenge],
-              ["origin", secrets.MIZU_ORIGIN],
+              ["origin", secrets.ORIGIN],
             ],
             req.body.authData,
             req.body.signature,
