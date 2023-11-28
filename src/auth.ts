@@ -106,7 +106,7 @@ export const registerUserWithPasskey =
         const challenge = crypto.createHash("sha256").update(
             Buffer.concat([
               Buffer.from("register", "utf-8"), // action
-              Buffer.from(address, "hex"), // address
+              Buffer.from(req.body.username, "utf-8"), // address
               Buffer.from(req.body.operator, "hex"), // operator
               Buffer.from(req.body.kek, "hex"), // kek
             ])
@@ -115,7 +115,7 @@ export const registerUserWithPasskey =
             req.body.clientDataJson,
             [
               ["challenge", challenge],
-              ["origin", secrets.ORIGIN],
+              ["origin", secrets.MIZU_ORIGIN],
             ],
             req.body.authData,
             req.body.signature,
@@ -125,7 +125,6 @@ export const registerUserWithPasskey =
         const dekId = sha256(newDek).toString("hex");
         const newDekClientEncrypted = encrypt(
             req.body.kek, Buffer.from(newDek));
-
         await registerUser(
             uid,
             address,
@@ -222,7 +221,7 @@ export const loginWithPasskey =
             req.body.clientDataJson,
             [
               ["challenge", challenge],
-              ["origin", secrets.ORIGIN],
+              ["origin", secrets.MIZU_ORIGIN],
             ],
             req.body.authData,
             req.body.signature,
@@ -348,7 +347,16 @@ const validatePasskeySignature = (
   const parsed = JSON.parse(clientDataJson);
   for (const [key, value] of expected) {
     if (parsed[key] !== value) {
-      throw new HexlinkError(400, "invalid client data");
+      if (key === "challenge") {
+        const decodedChallenge = Buffer.from(parsed[key], "base64").toString("utf-8");
+        if (decodedChallenge !== value) {
+          throw new HexlinkError(400, "invalid client data");
+        }
+      } else {
+        if (parsed[key] !== value) {
+          throw new HexlinkError(400, "invalid client data");
+        }
+      }
     }
   }
 
