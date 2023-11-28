@@ -45,7 +45,7 @@ const secrets = functions.config().doppler || {};
  * }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true})(req, res, async () => {
+  return cors({origin: true, credentials: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
         throw new HexlinkError(429, "Too many requests");
@@ -95,7 +95,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  */
 export const registerUserWithPasskey =
   functions.https.onRequest((req, res) => {
-    return cors({origin: true})(req, res, async () => {
+    return cors({origin: true, credentials: true})(req, res, async () => {
       try {
         if (secrets.ENV !== "dev" && await registerRateLimit(req.ip || "")) {
           throw new HexlinkError(429, "Too many requests");
@@ -106,7 +106,7 @@ export const registerUserWithPasskey =
         const challenge = crypto.createHash("sha256").update(
             Buffer.concat([
               Buffer.from("register", "utf-8"), // action
-              Buffer.from(address, "hex"), // address
+              Buffer.from(req.body.username, "utf-8"), // address
               Buffer.from(req.body.operator, "hex"), // operator
               Buffer.from(req.body.kek, "hex"), // kek
             ])
@@ -125,7 +125,6 @@ export const registerUserWithPasskey =
         const dekId = sha256(newDek).toString("hex");
         const newDekClientEncrypted = encrypt(
             req.body.kek, Buffer.from(newDek));
-
         await registerUser(
             uid,
             address,
@@ -158,7 +157,7 @@ export const registerUserWithPasskey =
  */
 export const getPasskeyChallenge =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         if (secrets.ENV !== "dev" && await getChallengeRateLimit(req.ip || "")) {
           throw new HexlinkError(429, "Too many requests");
@@ -199,7 +198,7 @@ export const getPasskeyChallenge =
  */
 export const loginWithPasskey =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         const user = await getUser(req.body.address);
         if (user == null) {
@@ -259,7 +258,7 @@ export const loginWithPasskey =
  */
 export const getDataEncryptionKey =
   functions.https.onRequest((req, res) => {
-    cors({origin: true})(req, res, async () => {
+    cors({origin: true, credentials: true})(req, res, async () => {
       try {
         const firebaseIdToken = extractFirebaseIdToken(req);
         const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
@@ -348,7 +347,16 @@ const validatePasskeySignature = (
   const parsed = JSON.parse(clientDataJson);
   for (const [key, value] of expected) {
     if (parsed[key] !== value) {
-      throw new HexlinkError(400, "invalid client data");
+      if (key === "challenge") {
+        const decodedChallenge = Buffer.from(parsed[key], "base64").toString("utf-8");
+        if (decodedChallenge !== value) {
+          throw new HexlinkError(400, "invalid client data");
+        }
+      } else {
+        if (parsed[key] !== value) {
+          throw new HexlinkError(400, "invalid client data");
+        }
+      }
     }
   }
 
