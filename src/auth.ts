@@ -76,12 +76,12 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  * req.body: {
  *  username: string,
  *  operator: string,
+ *  kek: string, // hex
  *  passkey: {
  *    id: string,
  *    pubKeyX: string,
  *    pubKeyY: string,
  *  },
- *  kek: string, // hex
  *  clientDataJson: string,
  *  authData: string, // hex
  *  signature: string, // hex
@@ -106,7 +106,7 @@ export const registerUserWithPasskey =
         const challenge = crypto.createHash("sha256").update(
             Buffer.concat([
               Buffer.from("register", "utf-8"), // action
-              Buffer.from(req.body.username, "utf-8"), // address
+              Buffer.from(req.body.username, "utf-8"), // username
               Buffer.from(req.body.operator, "hex"), // operator
               Buffer.from(req.body.kek, "hex"), // kek
             ])
@@ -148,7 +148,7 @@ export const registerUserWithPasskey =
 
 /**
  * req.body: {
- *  address: string,
+ *   address: string,
  * }
  *
  * res: {
@@ -183,7 +183,7 @@ export const getPasskeyChallenge =
 /*
  * req.body: {
  *   address: string,
- *   dekId: string,
+ *   dekId?: string, // optional
  *   kek: string, // hex
  *   clientDataJson: string,
  *   authData: string, // hex
@@ -213,7 +213,7 @@ export const loginWithPasskey =
               Buffer.from("login", "utf-8"), // action
               Buffer.from(req.body.address, "hex"), // address
               Buffer.from(req.body.kek, "hex"), // kek
-              Buffer.from(req.body.dekId, "hex"), // dekId
+              Buffer.from(req.body.dekId ?? ethers.ZeroHash, "hex"), // dekId
               Buffer.from(user.loginStatus.challenge, "hex"), // challenge
             ])
         ).digest("base64");
@@ -227,19 +227,26 @@ export const loginWithPasskey =
             req.body.signature,
             user.passkey,
         );
-        const {dek, newDek} = await getAndGenDeks(
-            req.body.dekId, req.body.kek, user);
-        await postAuth(req.body.address, req.body.kek, {
-          [dek.keyId]: dek.server,
-          [newDek.keyId]: newDek.server,
-        });
-        const token = await admin.auth().createCustomToken(
-            req.body.address);
-        res.status(200).json({
-          token: token,
-          dek: dek.client,
-          newDek: newDek.client,
-        });
+        if (req.body.dekId) {
+          const {dek, newDek} = await getAndGenDeks(
+              req.body.dekId, req.body.kek, user);
+          await postAuth(req.body.address, req.body.kek, {
+            [dek.keyId]: dek.server,
+            [newDek.keyId]: newDek.server,
+          });
+          const token = await admin.auth().createCustomToken(
+              req.body.address);
+          res.status(200).json({
+            token: token,
+            dek: dek.client,
+            newDek: newDek.client,
+          });
+        } else {
+          await postAuth(req.body.address, req.body.kek);
+          const token = await admin.auth().createCustomToken(
+              req.body.address);
+          res.status(200).json({token});
+        }
       } catch (err: unknown) {
         handleError(res, err);
       }

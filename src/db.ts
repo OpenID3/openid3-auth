@@ -43,7 +43,7 @@ export async function resolveName(
 export async function registerUser(
     uid: string,
     address: string,
-    passkey: string,
+    passkey: Passkey,
     operator: string,
     kek: string,
     deks: {[key: string]: string}
@@ -105,16 +105,19 @@ export async function preAuth(address: string, challenge: string) {
 export async function postAuth(
     address: string,
     kek: string,
-    deks: {[key: string]: string}
+    deks?: {[key: string]: string}
 ) {
-  await firestore().collection("users").doc(address).update({
-    kek,
-    deks,
-    loginStatus: {
-      challenge: "",
-      updatedAt: new Timestamp(epoch(), 0),
-    },
-  });
+  const loginStatus = {
+    challenge: "",
+    updatedAt: new Timestamp(epoch(), 0),
+  };
+  if (deks) {
+    await firestore().collection("users").doc(
+        address).update({kek, deks, loginStatus});
+  } else {
+    await firestore().collection("users").doc(
+        address).update({kek, loginStatus});
+  }
 }
 
 export async function updateDeks(

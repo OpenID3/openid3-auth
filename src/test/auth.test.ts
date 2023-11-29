@@ -225,9 +225,11 @@ describe("registerPasskey", () => {
     jest
         .spyOn(db, "postAuth")
         .mockImplementation(
-            (_uid: string, kek: string, deks: { [key: string]: string }) => {
+            (_uid: string, kek: string, deks?: { [key: string]: string }) => {
               userDb.kek = kek;
-              userDb.deks = deks;
+              if (deks) {
+                userDb.deks = deks;
+              }
               expect(userDb.kek).toEqual(newKek.pubKey);
               return Promise.resolve();
             }
