@@ -213,7 +213,7 @@ export const loginWithPasskey =
               Buffer.from("login", "utf-8"), // action
               Buffer.from(req.body.address, "hex"), // address
               Buffer.from(req.body.kek, "hex"), // kek
-              Buffer.from(req.body.dekId ?? ethers.ZeroHash, "hex"), // dekId
+              Buffer.from(req.body.dekId ?? ethers.ZeroHash.slice(2), "hex"), // dekId
               Buffer.from(user.loginStatus.challenge, "hex"), // challenge
             ])
         ).digest("base64");
