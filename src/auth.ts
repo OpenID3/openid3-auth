@@ -58,9 +58,11 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
         if (user) {
           res.status(200).json({
             registered: true,
-            address,
-            operator: user.operator,
-            passkey: user.passkey,
+            user: {
+              address,
+              passkey: user.passkey,
+              operatorPubKey: user.operator,
+            },
           });
         } else {
           throw new HexlinkError(500, "user data lost");
