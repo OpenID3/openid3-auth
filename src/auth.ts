@@ -294,7 +294,7 @@ export const sessionLogin =
         if (new Date().getTime() / 1000 - decoded.auth_time > 5 * 60) {
           throw new HexlinkError(401, "recent sign in required");
         }
-        const expiresIn = 60 * 30 * 1000; // valid for 30 minutes
+        const expiresIn = 60 * 60 * 24 * 7 *1000; // valid for 7 days
         const sessionCookie = await admin.auth().createSessionCookie(
             idToken, {expiresIn});
         res.cookie("__session", sessionCookie, {
