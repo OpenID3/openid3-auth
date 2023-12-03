@@ -20,6 +20,7 @@ export interface User {
         updatedAt: Timestamp,
     };
     createdAt: Timestamp;
+    csrfToken: string;
 }
 
 export interface NameData {
@@ -46,7 +47,8 @@ export async function registerUser(
     passkey: Passkey,
     operator: string,
     kek: string,
-    deks: {[key: string]: string}
+    deks: {[key: string]: string},
+    csrfToken: string,
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
@@ -67,6 +69,7 @@ export async function registerUser(
         challenge: "",
         updatedAt: new Timestamp(epoch(), 0),
       },
+      csrfToken,
     });
   });
 }
@@ -105,6 +108,7 @@ export async function preAuth(address: string, challenge: string) {
 export async function postAuth(
     address: string,
     kek: string,
+    csrfToken: string,
     deks?: {[key: string]: string}
 ) {
   const loginStatus = {
@@ -113,10 +117,10 @@ export async function postAuth(
   };
   if (deks) {
     await firestore().collection("users").doc(
-        address).update({kek, deks, loginStatus});
+        address).update({kek, deks, loginStatus, csrfToken});
   } else {
     await firestore().collection("users").doc(
-        address).update({kek, loginStatus});
+        address).update({kek, loginStatus, csrfToken});
   }
 }
 

@@ -8,6 +8,7 @@ exports.getUserByUid = auth.getUserByUid;
 exports.registerUserWithPasskey = auth.registerUserWithPasskey;
 exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
+exports.sessionLogin = auth.sessionLogin;
 exports.getDataEncryptionKey = auth.getDataEncryptionKey;
 
 exports.requestToReset = zkp.requestToReset;

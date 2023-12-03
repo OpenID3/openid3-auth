@@ -5,6 +5,7 @@ import crypto from "crypto";
 import {secp256r1} from "@noble/curves/p256";
 import {encrypt} from "eciesjs";
 import {ethers} from "ethers";
+import * as cookie from "cookie";
 
 import {
   HexlinkError,
@@ -39,10 +40,11 @@ const secrets = functions.config().doppler || {};
  *
  * res: {
  *   registered: boolean,
- *   address?: string,
- *   operator?: string,
- *   passkey?: Passkey,
- * }
+ *   user?: { // only valid if registered is true
+ *     address?: string,
+ *     operator?: string,
+ *     passkey?: Passkey,
+ *   }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
   return cors({origin: true, credentials: true})(req, res, async () => {
@@ -92,7 +94,8 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  * res: {
  *   address: string,
  *   token: string,
- *   dek: string, // base64
+ *   dek: string, // base64,
+ *   csrfToken: string,
  * }
  */
 export const registerUserWithPasskey =
@@ -123,24 +126,27 @@ export const registerUserWithPasskey =
             req.body.signature,
             req.body.passkey,
         );
-        const newDek = crypto.randomBytes(32).toString("hex");
-        const dekId = sha256(newDek).toString("hex");
-        const newDekClientEncrypted = encrypt(
-            req.body.kek, Buffer.from(newDek));
+        const dek = crypto.randomBytes(32);
+        const dekId = sha256(dek).toString("hex");
+        const newDekClientEncrypted = encrypt(req.body.kek, dek);
+        const csrfToken = crypto.randomBytes(32).toString("hex");
         await registerUser(
             uid,
             address,
             req.body.passkey,
             req.body.operator,
             req.body.kek,
-            {[dekId]: await encryptWithSymmKey(newDek)}
+            {[dekId]: await encryptWithSymmKey(dek.toString("hex"))},
+            csrfToken,
         );
-        await admin.auth().createUser({uid});
-        const token = await admin.auth().createCustomToken(uid);
+        // use address as the user id
+        await admin.auth().createUser({uid: address});
+        const token = await admin.auth().createCustomToken(address);
         res.status(200).json({
           address,
           token: token,
           dek: newDekClientEncrypted.toString("hex"),
+          csrfToken,
         });
       } catch (err: unknown) {
         handleError(res, err);
@@ -196,6 +202,7 @@ export const getPasskeyChallenge =
  *   token: string,
  *   dek: string,
  *   newDek: string,
+ *   csrfToken: string,
  * }
  */
 export const loginWithPasskey =
@@ -229,10 +236,11 @@ export const loginWithPasskey =
             req.body.signature,
             user.passkey,
         );
+        const csrfToken = crypto.randomBytes(32).toString("hex");
         if (req.body.dekId) {
           const {dek, newDek} = await getAndGenDeks(
               req.body.dekId, req.body.kek, user);
-          await postAuth(req.body.address, req.body.kek, {
+          await postAuth(req.body.address, req.body.kek, csrfToken, {
             [dek.keyId]: dek.server,
             [newDek.keyId]: newDek.server,
           });
@@ -242,12 +250,13 @@ export const loginWithPasskey =
             token: token,
             dek: dek.client,
             newDek: newDek.client,
+            csrfToken,
           });
         } else {
-          await postAuth(req.body.address, req.body.kek);
+          await postAuth(req.body.address, req.body.kek, csrfToken);
           const token = await admin.auth().createCustomToken(
               req.body.address);
-          res.status(200).json({token});
+          res.status(200).json({token, csrfToken});
         }
       } catch (err: unknown) {
         handleError(res, err);
@@ -257,7 +266,54 @@ export const loginWithPasskey =
 
 /**
  * req.body: {
+ *   idToken: string,
+ *   csrfToken: string,
+ * }
+ *
+ * res: {
+ *   success: true,
+ * }
+ */
+export const sessionLogin =
+  functions.https.onRequest((req, res) => {
+    cors({
+      origin: true,
+      credentials: true,
+      allowedHeaders: ["Content-Type", "Set-Cookie"],
+    })(req, res, async () => {
+      try {
+        const idToken = req.body.idToken;
+        const csrfToken = req.body.csrfToken;
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const user = await getUser(decoded.uid);
+        // Guard against CSRF attacks.
+        if (csrfToken !== user?.csrfToken) {
+          throw new HexlinkError(401, "UNAUTHORIZED REQUEST");
+        }
+        // Only process if the user just signed in in the last 5 minutes.
+        if (new Date().getTime() / 1000 - decoded.auth_time > 5 * 60) {
+          throw new HexlinkError(401, "recent sign in required");
+        }
+        const expiresIn = 60 * 30 * 1000; // valid for 30 minutes
+        const sessionCookie = await admin.auth().createSessionCookie(
+            idToken, {expiresIn});
+        res.cookie("__session", sessionCookie, {
+          maxAge: expiresIn,
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+        }).appendHeader("Cache-Control", "private")
+            .status(200).json({success: true});
+      } catch (err: unknown) {
+        handleError(res, err);
+      }
+    });
+  });
+
+/**
+ * req.body: {
  *   keyId: string,
+ *   csrfToken: string,
  * }
  *
  * res: {
@@ -269,16 +325,15 @@ export const getDataEncryptionKey =
   functions.https.onRequest((req, res) => {
     cors({origin: true, credentials: true})(req, res, async () => {
       try {
-        const firebaseIdToken = extractFirebaseIdToken(req);
-        const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
-        const user = await getUser(decoded.uid);
-        if (user == null) {
-          throw new HexlinkError(404, "User not found");
+        const claims = await verifySessionCookie(req);
+        const user = await getUser(claims.uid);
+        if (!user || req.body.csrfToken != user?.csrfToken) {
+          throw new HexlinkError(401, "Access denied");
         }
         const {dek, newDek} = await getAndGenDeks(
             req.body.keyId, user.kek, user);
         await updateDeks(
-            decoded.uid,
+            claims.uid,
             {
               [dek.keyId]: dek.server,
               [newDek.keyId]: newDek.server,
@@ -296,22 +351,21 @@ const getAndGenDeks = async (keyId: string, kek: string, user: User) => {
   if (!dekServerEncrypted) {
     throw new HexlinkError(404, "Key not found");
   }
-  const newDek = crypto.randomBytes(32).toString("hex");
+  const newDek = crypto.randomBytes(32);
   const [
-    decryptedDek, newDekServerEncrypted,
+    decryptedDekStr, newDekServerEncrypted,
   ] = await Promise.all([
     decryptWithSymmKey(dekServerEncrypted),
-    encryptWithSymmKey(newDek),
+    encryptWithSymmKey(newDek.toString("hex")),
   ]);
-  const keyIdFromDek = sha256(Buffer.from(decryptedDek, "hex"));
+  const decryptedDek = Buffer.from(decryptedDekStr, "hex");
+  const keyIdFromDek = sha256(decryptedDek);
   if (keyIdFromDek.toString("hex") !== keyId) {
     throw new HexlinkError(500, "server data corrupted");
   }
-  const dekClientEncrypted = encrypt(
-      kek, Buffer.from(decryptedDek, "hex"));
-  const newKeyId = sha256(Buffer.from(newDek, "hex")).toString("hex");
-  const newDekClientEncrypted = encrypt(
-      kek, Buffer.from(newDek, "hex"));
+  const dekClientEncrypted = encrypt(kek, decryptedDek);
+  const newKeyId = sha256(newDek).toString("hex");
+  const newDekClientEncrypted = encrypt(kek, newDek);
   return {
     dek: {
       keyId,
@@ -326,23 +380,18 @@ const getAndGenDeks = async (keyId: string, kek: string, user: User) => {
   };
 };
 
-export const extractFirebaseIdToken = (req: functions.Request) => {
-  if ((!req.headers.authorization || !req.headers.authorization.startsWith("Bearer ")) &&
-      !(req.cookies && req.cookies.__session)) {
-    functions.logger.error(
-        "No Firebase ID token was passed as a Bearer token in the Authorization header.",
-        "Make sure you authorize your request by providing the following HTTP header:",
-        "Authorization: Bearer <Firebase ID Token>",
-        "or by passing a \"__session\" cookie."
-    );
-    throw new HexlinkError(403, "Unauthorized");
+export const verifySessionCookie = async (req: functions.Request) => {
+  const sessionCookie = cookie.parse(req.headers.cookie || "");
+  const session = sessionCookie.__session;
+  if (!session) {
+    throw new HexlinkError(401, "UNAUTHORIZED REQUEST");
   }
-  if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
-    return req.headers.authorization.split("Bearer ")[1];
-  } else if (req.cookies) {
-    return req.cookies.__session;
-  } else {
-    throw new HexlinkError(403, "Unauthorized");
+  try {
+    return admin.auth().verifySessionCookie(
+        session, true /** checkRevoked */);
+  } catch (err: unknown) {
+    console.log(err);
+    throw new HexlinkError(401, "UNAUTHORIZED REQUEST");
   }
 };
 

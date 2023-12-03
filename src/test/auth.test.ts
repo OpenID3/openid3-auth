@@ -69,7 +69,7 @@ describe("registerPasskey", () => {
         ORIGIN,
         eciesKey.pubKey,
         passkey,
-        operator.address,
+        operator.address
     );
     return {
       headers: {origin: true},
@@ -209,6 +209,7 @@ describe("registerPasskey", () => {
         updatedAt: new Timestamp(utils.epoch(), 0),
       },
       createdAt: new Timestamp(utils.epoch(), 0),
+      csrfToken: "",
     };
     const newKek = genEciesKey();
     const account = getAccountAddress(userDb.passkey, userDb.operator);
@@ -225,7 +226,12 @@ describe("registerPasskey", () => {
     jest
         .spyOn(db, "postAuth")
         .mockImplementation(
-            (_uid: string, kek: string, deks?: { [key: string]: string }) => {
+            (
+                _uid: string,
+                kek: string,
+                csrfToken: string,
+                deks?: { [key: string]: string }
+            ) => {
               userDb.kek = kek;
               if (deks) {
                 userDb.deks = deks;
@@ -286,6 +292,7 @@ describe("registerPasskey", () => {
         updatedAt: new Timestamp(utils.epoch(), 0),
       },
       createdAt: new Timestamp(utils.epoch(), 0),
+      csrfToken: "",
     };
     const account = getAccountAddress(userDb.passkey, userDb.operator);
 
