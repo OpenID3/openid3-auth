@@ -7,7 +7,6 @@ import * as jose from "jose";
 import {HexlinkError, handleError, sha256} from "./utils";
 import {addNewZkpRequest, addZkProof, getZkp, markZkProofError} from "./db";
 import {defineSecret} from "firebase-functions/params";
-import {extractFirebaseIdToken} from "./auth";
 import {
   JwtInput,
   genUserOpHash,
@@ -64,7 +63,7 @@ export const requestToReset = functions
           const jwtInput = await genJwtInput(
               decoded.uid,
               req.body.provider,
-              req.body.idToken,
+              req.body.idToken
           );
           const zkp = await getZkp(decoded.uid);
           if (zkp && zkp.status === "processing") {
@@ -233,3 +232,29 @@ async function requestZkp(uid: string, idToken: string, secret: string) {
     throw new HexlinkError(500, "failed to generate zkp proof");
   }
 }
+
+const extractFirebaseIdToken = (req: functions.Request) => {
+  if (
+    (!req.headers.authorization ||
+      !req.headers.authorization.startsWith("Bearer ")) &&
+    !(req.cookies && req.cookies.__session)
+  ) {
+    functions.logger.error(
+        "No Firebase ID token was passed as a Bearer token in the Authorization header.",
+        "Make sure you authorize your request by providing the following HTTP header:",
+        "Authorization: Bearer <Firebase ID Token>",
+        "or by passing a \"__session\" cookie."
+    );
+    throw new HexlinkError(403, "Unauthorized");
+  }
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer ")
+  ) {
+    return req.headers.authorization.split("Bearer ")[1];
+  } else if (req.cookies) {
+    return req.cookies.__session;
+  } else {
+    throw new HexlinkError(403, "Unauthorized");
+  }
+};
