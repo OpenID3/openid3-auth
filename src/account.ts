@@ -18,9 +18,10 @@ function formatHex(hex: string) {
 
 export function buildPasskeyAdminData(passkey: Passkey) {
   const admin = new ethers.Interface(PasskeyAdmin__factory.abi);
-  const adminData = admin.encodeFunctionData("setPasskey", [
-    [formatHex(passkey.x), formatHex(passkey.y)],
-  ]);
+  const adminData = admin.encodeFunctionData("setPasskey", [{
+    pubKeyX: BigInt(formatHex(passkey.x)),
+    pubKeyY: BigInt(formatHex(passkey.y)),
+  }, passkey.id]);
   return ethers.solidityPacked(
       ["address", "bytes"],
       [secrets.PASSKEY_ADMIN_CONTRACT_V1!, adminData]
