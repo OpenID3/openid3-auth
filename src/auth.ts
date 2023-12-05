@@ -40,10 +40,39 @@ const secrets = functions.config().doppler || {};
  *
  * res: {
  *   registered: boolean,
+ *   address?: string, // only valid if registered is true
+ */
+
+export const getAddressByUid = functions.https.onRequest((req, res) => {
+  return cors({origin: true, credentials: true})(req, res, async () => {
+    try {
+      if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
+        throw new HexlinkError(429, "Too many requests");
+      }
+      const address = await resolveName(req.body.uid);
+      if (!address) {
+        res.status(200).json({registered: false});
+      } else {
+        res.status(200).json({registered: true, address});
+      }
+    } catch (err: unknown) {
+      handleError(res, err);
+    }
+  });
+});
+
+/**
+ * req.body: {
+ *   uid: string,
+ * }
+ *
+ * res: {
+ *   registered: boolean,
  *   user?: { // only valid if registered is true
- *     address?: string,
- *     operator?: string,
- *     passkey?: Passkey,
+ *     address: string,
+ *     operator: string,
+ *     passkey: Passkey,
+ *     name?: string,
  *   }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
@@ -64,6 +93,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
               address,
               passkey: user.passkey,
               operatorPubKey: user.operator,
+              name: user.name,
             },
           });
         } else {
@@ -75,6 +105,47 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
     }
   });
 });
+
+/**
+ * req.body: {
+ *   address: string,
+ * }
+ *
+ * res: {
+ *   registered: boolean,
+ *   user?: { // only valid if registered is true
+ *     address: string,
+ *     operator: string,
+ *     passkey: Passkey,
+ *     name?: string,
+ *   }
+ */
+export const getUserByAddress = functions.https.onRequest((req, res) => {
+  return cors({origin: true, credentials: true})(req, res, async () => {
+    try {
+      if (secrets.ENV !== "dev" && await checkNameRateLimit(req.ip || "")) {
+        throw new HexlinkError(429, "Too many requests");
+      }
+      const user = await getUser(req.body.address);
+      if (user) {
+        res.status(200).json({
+          registered: true,
+          user: {
+            address: req.body.address,
+            passkey: user.passkey,
+            operatorPubKey: user.operator,
+            name: user.name,
+          },
+        });
+      } else {
+        throw new HexlinkError(404, "user not found");
+      }
+    } catch (err: unknown) {
+      handleError(res, err);
+    }
+  });
+});
+
 
 /**
  * req.body: {
@@ -138,6 +209,7 @@ export const registerUserWithPasskey =
             req.body.kek,
             {[dekId]: await encryptWithSymmKey(dek.toString("hex"))},
             csrfToken,
+            req.body.username,
         );
         // use address as the user id
         await admin.auth().createUser({uid: address});
@@ -294,7 +366,7 @@ export const sessionLogin =
         if (new Date().getTime() / 1000 - decoded.auth_time > 5 * 60) {
           throw new HexlinkError(401, "recent sign in required");
         }
-        const expiresIn = 60 * 60 * 24 * 7 *1000; // valid for 7 days
+        const expiresIn = 60 * 60 * 24 * 7 * 1000; // valid for 7 days
         const sessionCookie = await admin.auth().createSessionCookie(
             idToken, {expiresIn});
         res.cookie("__session", sessionCookie, {

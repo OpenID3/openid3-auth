@@ -21,6 +21,7 @@ export interface User {
     };
     createdAt: Timestamp;
     csrfToken: string;
+    name?: string;
 }
 
 export interface NameData {
@@ -49,6 +50,7 @@ export async function registerUser(
     kek: string,
     deks: {[key: string]: string},
     csrfToken: string,
+    name: string,
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
@@ -70,6 +72,7 @@ export async function registerUser(
         updatedAt: new Timestamp(epoch(), 0),
       },
       csrfToken,
+      name,
     });
   });
 }
