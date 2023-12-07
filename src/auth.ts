@@ -93,7 +93,8 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
             user: {
               address,
               passkey: user.passkey,
-              operatorPubKey: user.operator,
+              operator: user.operator,
+              metadata: user.metadata,
               name: user.name,
             },
           });
@@ -135,7 +136,8 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
           user: {
             address: req.body.address,
             passkey: user.passkey,
-            operatorPubKey: user.operator,
+            operator: user.operator,
+            metadata: user.metadata,
             name: user.name,
           },
         });
