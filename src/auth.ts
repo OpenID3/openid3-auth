@@ -71,6 +71,7 @@ export const getAddressByUid = functions.https.onRequest((req, res) => {
  *   user?: { // only valid if registered is true
  *     address: string,
  *     operator: string,
+ *     metadata: string,
  *     passkey: Passkey,
  *     name?: string,
  *   }
@@ -116,6 +117,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  *   user?: { // only valid if registered is true
  *     address: string,
  *     operator: string,
+ *     metadata: string,
  *     passkey: Passkey,
  *     name?: string,
  *   }
@@ -151,6 +153,7 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
  * req.body: {
  *  username: string,
  *  operator: string,
+ *  metadata: string,
  *  kek: string, // hex
  *  passkey: {
  *    id: string,
@@ -184,6 +187,7 @@ export const registerUserWithPasskey =
               Buffer.from("register", "utf-8"), // action
               Buffer.from(req.body.username, "utf-8"), // username
               Buffer.from(req.body.operator, "hex"), // operator
+              Buffer.from(req.body.metadata, "hex"), // metadata
               Buffer.from(req.body.kek, "hex"), // kek
             ])
         ).digest("base64");
@@ -206,6 +210,7 @@ export const registerUserWithPasskey =
             address,
             req.body.passkey,
             req.body.operator,
+            req.body.metadata,
             req.body.kek,
             {[dekId]: await encryptWithSymmKey(dek.toString("hex"))},
             csrfToken,

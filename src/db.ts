@@ -13,6 +13,7 @@ export interface Passkey {
 export interface User {
     passkey: Passkey;
     operator: string; // operator address
+    metadata: string; // metadata for user
     kek: string; // stored at client side to decrypt the dek from server
     deks: {[key: string]: string};
     loginStatus: {
@@ -47,6 +48,7 @@ export async function registerUser(
     address: string,
     passkey: Passkey,
     operator: string,
+    metadata: string,
     kek: string,
     deks: {[key: string]: string},
     csrfToken: string,
@@ -64,6 +66,7 @@ export async function registerUser(
     t.set(userRef, {
       passkey,
       operator,
+      metadata,
       kek,
       deks,
       createdAt: new Timestamp(epoch(), 0),
