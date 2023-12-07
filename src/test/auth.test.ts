@@ -202,6 +202,7 @@ describe("registerPasskey", () => {
     const userDb: db.User = {
       passkey: {id: pkId, ...passkey.pubKey},
       operator: operator.address,
+      metadata: ethers.ZeroHash,
       kek: "",
       deks: {[dekId]: dekServerEncrypted},
       loginStatus: {
@@ -285,6 +286,7 @@ describe("registerPasskey", () => {
     const userDb: db.User = {
       passkey: {id: pkId, ...passkey.pubKey},
       operator: operator.address,
+      metadata: ethers.ZeroHash,
       kek: eciesKey.pubKey,
       deks: {[dekId]: dekServerEncrypted},
       loginStatus: {
