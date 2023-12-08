@@ -40,7 +40,7 @@ export function buildAccountInitData(
   return account.encodeFunctionData("initialize", [
     buildPasskeyAdminData(passkey),
     operator,
-    metadata,
+    formatHex(metadata),
   ]);
 }
 
