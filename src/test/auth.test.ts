@@ -213,7 +213,11 @@ describe("registerPasskey", () => {
       csrfToken: "",
     };
     const newKek = genEciesKey();
-    const account = getAccountAddress(userDb.passkey, userDb.operator);
+    const account = getAccountAddress(
+        userDb.passkey,
+        userDb.operator,
+        userDb.metadata
+    );
 
     jest
         .spyOn(db, "preAuth")
@@ -296,7 +300,11 @@ describe("registerPasskey", () => {
       createdAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-    const account = getAccountAddress(userDb.passkey, userDb.operator);
+    const account = getAccountAddress(
+        userDb.passkey,
+        userDb.operator,
+        userDb.metadata
+    );
 
     jest
         .spyOn(db, "postAuth")
@@ -348,8 +356,9 @@ describe("registerPasskey", () => {
 
     jest
         .spyOn(db, "getUser")
-        .mockImplementation(
-            () => Promise.resolve(userDb as unknown as db.User));
+        .mockImplementation(() => {
+          return Promise.resolve(userDb as unknown as db.User);
+        });
     jest
         .spyOn(db, "updateDeks")
         .mockImplementation(
