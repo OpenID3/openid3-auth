@@ -19,7 +19,7 @@
     "@account-abstraction/utils": "^0.6.0",
     "@ethersproject/providers": "^5.7.2",
     "@google-cloud/kms": "^3.1.0",
-    "@openid3/contracts": "^0.0.5",
+    "@openid3/contracts": "^0.0.7",
     "@types/cookie": "^0.6.0",
     "@types/node": "^18.11.18",
     "@types/node-fetch": "^2.6.2",

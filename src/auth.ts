@@ -183,7 +183,10 @@ export const registerUserWithPasskey =
         }
         const uid = genNameHash(req.body.username);
         const address = getAccountAddress(
-            req.body.passkey, req.body.operator);
+            req.body.passkey,
+            req.body.operator,
+            req.body.metadata
+        );
         const challenge = crypto.createHash("sha256").update(
             Buffer.concat([
               Buffer.from("register", "utf-8"), // action
