@@ -27,7 +27,7 @@ export function buildPasskeyAdminData(passkey: Passkey) {
   ]);
   return ethers.solidityPacked(
       ["address", "bytes"],
-      [secrets.PASSKEY_ADMIN_CONTRACT_V1!, adminData]
+      [secrets.CONTRACT_V0_0_8_PASSSKEY_ADMIN!, adminData]
   );
 }
 
@@ -70,8 +70,8 @@ export function getAccountAddress(
 ) {
   const accountData = buildAccountInitData(passkey, operator, metadata);
   return predictDeterministicAddress(
-    secrets.ACCOUNT_PROXY_CONTRACT_V1!,
-    secrets.ACCOUNT_FACTORY_CONTRACT_V1!,
+    secrets.CONTRACT_V0_0_8_ACCOUNT_PROXY!,
+    secrets.CONTRACT_V0_0_8_ACCOUNT_FACTORY!,
     ethers.keccak256(accountData)
   );
 }
