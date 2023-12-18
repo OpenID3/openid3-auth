@@ -14,7 +14,7 @@ export const genPasskey = (id: string): any => {
   const point = secp256r1.ProjectivePoint.fromHex(pubKey);
   const x = ethers.solidityPacked(["uint256"], [point.x]).slice(2);
   const y = ethers.solidityPacked(["uint256"], [point.y]).slice(2);
-  return {privKey, pubKey: {x, y}, id};
+  return {privKey, pubKey: {x, y, id}};
 };
 
 export const signWithPasskey = (
@@ -52,18 +52,20 @@ export const signWithPasskey = (
 };
 
 export const signRegisterRequest = (
-    address: string,
+    username: string,
     origin: string,
-    kek: string,
     passkey: any,
     operator: string,
+    metadata: string,
+    salt: string,
 ) => {
   const challenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("register", "utf-8"), // action
-        Buffer.from(address, "hex"), // address
+        Buffer.from(username, "utf-8"), // username
         Buffer.from(operator, "hex"), // operator
-        Buffer.from(kek, "hex"), // kek
+        Buffer.from(metadata, "hex"), // metadata
+        Buffer.from(salt, "hex"), // salt
       ])
   ).digest("base64");
   return signWithPasskey(challenge, origin, passkey);
@@ -72,18 +74,18 @@ export const signRegisterRequest = (
 export const signLoginRequest = (
     address: string,
     origin: string,
-    dekId: string,
-    kek: string,
     challenge: string,
     passkey: any,
+    encryptedSalt?: string, // ciphertext
+    newSalt?: string, // plaintext
 ) => {
   const signedChallenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("login", "utf-8"), // action
         Buffer.from(address, "hex"), // address
-        Buffer.from(kek, "hex"), // kek
-        Buffer.from(dekId, "hex"), // dekId
         Buffer.from(challenge, "hex"), // challenge
+        Buffer.from(newSalt ?? ethers.ZeroHash, "hex"), // new salt
+        Buffer.from(encryptedSalt ?? "", "utf-8"), // salt
       ])
   ).digest("base64");
   return signWithPasskey(signedChallenge, origin, passkey);

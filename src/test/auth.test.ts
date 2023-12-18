@@ -1,7 +1,6 @@
 import assert from "assert";
 import {
   Key,
-  genEciesKey,
   genPasskey,
   signLoginRequest,
   signRegisterRequest,
@@ -18,9 +17,11 @@ testEnv.mockConfig({
     DEV_KEY: crypto.randomBytes(32).toString("hex"),
     DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
     ORIGIN,
-    ACCOUNT_PROXY_CONTRACT_V1: "0x7CB55518ad352E220882935E419F7Fd3cA68B21A",
-    ACCOUNT_FACTORY_CONTRACT_V1: "0xa5727531591A3dE7ADaC6b3759bEF5BD5549c121",
-    PASSKEY_ADMIN_CONTRACT_V1: "0x3dAdb4660d8e99B839d1eB6cAb6bB2Fd0414DcF1",
+    CONTRACT_V0_0_8_ACCOUNT_PROXY: "0x7CB55518ad352E220882935E419F7Fd3cA68B21A",
+    CONTRACT_V0_0_8_ACCOUNT_FACTORY:
+      "0xa5727531591A3dE7ADaC6b3759bEF5BD5549c121",
+    CONTRACT_V0_0_8_PASSSKEY_ADMIN:
+      "0x3dAdb4660d8e99B839d1eB6cAb6bB2Fd0414DcF1",
   },
 });
 
@@ -39,8 +40,7 @@ import * as auth from "../auth";
 import * as db from "../db";
 import * as utils from "../utils";
 import {Timestamp} from "@google-cloud/firestore";
-import {decryptWithSymmKey, encryptWithSymmKey} from "../gcloudKms";
-import {decrypt} from "eciesjs";
+import {encryptWithSymmKey} from "../gcloudKms";
 import {ethers} from "ethers";
 import {getAccountAddress} from "../account";
 import {HexlinkError} from "../utils";
@@ -51,25 +51,31 @@ jest.spyOn(db, "registerUser").mockImplementation(() => Promise.resolve());
 describe("registerPasskey", () => {
   let passkey: Key;
   let operator: ethers.HDNodeWallet;
-  let eciesKey: any;
   let pkId: string;
+  const metadata: string = ethers.ZeroHash.slice(2);
+  const salt = crypto.randomBytes(32).toString("hex");
+  const newSalt = crypto.randomBytes(32).toString("hex");
+  let encryptedSalt: string;
+  let encryptedNewSalt: string;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     pkId = "passkey1";
     passkey = genPasskey(pkId);
-    eciesKey = genEciesKey();
     operator = ethers.Wallet.createRandom();
+    encryptedSalt = await encryptWithSymmKey(salt);
+    encryptedNewSalt = await encryptWithSymmKey(newSalt);
   });
 
   const buildRegisterRequest = (username: string) => {
     const {clientDataJson, authData, signature} = signRegisterRequest(
         username,
         ORIGIN,
-        eciesKey.pubKey,
         passkey,
-        operator.address
+        operator.address,
+        metadata,
+        salt
     );
     return {
       headers: {origin: true},
@@ -77,39 +83,38 @@ describe("registerPasskey", () => {
         username,
         passkey: passkey.pubKey,
         operator: operator.address,
-        kek: eciesKey.pubKey,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
+        metadata,
+        salt,
       },
     };
   };
 
   const buildLoginRequest = (
       address: string,
-      dekId: string,
-      kek: string,
-      challenge: string
+      challenge: string,
+      encryptedSalt?: string,
+      newSalt?: string
   ) => {
     const {clientDataJson, authData, signature} = signLoginRequest(
         address,
         ORIGIN,
-        dekId,
-        kek,
         challenge,
-        passkey
+        passkey,
+        encryptedSalt,
+        newSalt
     );
     return {
       headers: {origin: true},
       body: {
         address,
-        passkey: passkey.pubKey,
-        operator: operator.address,
-        dekId,
-        kek,
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
+        encryptedSalt,
+        newSalt,
       },
     };
   };
@@ -132,8 +137,8 @@ describe("registerPasskey", () => {
   test("it should register a new user with passkey", (done: any) => {
     const username = "SOME.user.mizu";
     const jsonValidator = (response: any) => {
-      expect(response).toHaveProperty("dek");
       expect(response).toHaveProperty("token");
+      expect(encryptedSalt).toEqual(response.encryptedSalt);
       done();
     };
     const req = buildRegisterRequest(username);
@@ -193,18 +198,13 @@ describe("registerPasskey", () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test("the user should login with challenge and new kek", async () => {
+  test("the user should login with challenge", async () => {
     const username = "some.user.mizu";
     const userId = utils.genNameHash(username);
-    const dek = crypto.randomBytes(32);
-    const dekId = utils.sha256(Buffer.from(dek)).toString("hex");
-    const dekServerEncrypted = await encryptWithSymmKey(dek.toString("hex"));
     const userDb: db.User = {
       passkey: {id: pkId, ...passkey.pubKey},
       operator: operator.address,
-      metadata: ethers.ZeroHash,
-      kek: "",
-      deks: {[dekId]: dekServerEncrypted},
+      metadata,
       loginStatus: {
         challenge: "",
         updatedAt: new Timestamp(utils.epoch(), 0),
@@ -212,7 +212,6 @@ describe("registerPasskey", () => {
       createdAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-    const newKek = genEciesKey();
     const account = getAccountAddress(
         userDb.passkey,
         userDb.operator,
@@ -230,21 +229,10 @@ describe("registerPasskey", () => {
         });
     jest
         .spyOn(db, "postAuth")
-        .mockImplementation(
-            (
-                _uid: string,
-                kek: string,
-                csrfToken: string,
-                deks?: { [key: string]: string }
-            ) => {
-              userDb.kek = kek;
-              if (deks) {
-                userDb.deks = deks;
-              }
-              expect(userDb.kek).toEqual(newKek.pubKey);
-              return Promise.resolve();
-            }
-        );
+        .mockImplementation((_uid: string, csrfToken: string) => {
+          userDb.csrfToken = csrfToken;
+          return Promise.resolve();
+        });
     jest.spyOn(db, "getUser").mockImplementation(() => Promise.resolve(userDb));
     const req = {
       headers: {origin: true},
@@ -262,20 +250,20 @@ describe("registerPasskey", () => {
 
     const loginReq = buildLoginRequest(
         account,
-        dekId,
-        newKek.pubKey,
-        userDb.loginStatus.challenge
+        userDb.loginStatus.challenge,
+        encryptedSalt,
+        newSalt
     );
     const secondDone = Promise.resolve();
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
-      expect(response).toHaveProperty("dek");
-      const decryptedDek = decrypt(
-          newKek.privKey.secret,
-          Buffer.from(response.dek, "hex")
+      const expectedDek = ethers.solidityPackedKeccak256(
+          ["bytes32", "bytes32"],
+          ["0x" + salt, ethers.zeroPadValue(account, 32)]
       );
-      expect(decryptedDek.toString("hex")).toEqual(dek.toString("hex"));
-      expect(response).toHaveProperty("newDek");
+      expect(expectedDek.slice(2)).toEqual(response.dek);
+      expect(encryptedNewSalt).toEqual(response.encryptedNewSalt);
+      expect(userDb.csrfToken).toEqual(response.csrfToken);
       secondDone;
     });
     await auth.loginWithPasskey(loginReq as any, loginRes as any);
@@ -284,15 +272,10 @@ describe("registerPasskey", () => {
 
   test("it should throw if challenge or origin does not match", async () => {
     const challenge = utils.sha256("valid_challenge").toString("hex");
-    const dek = crypto.randomBytes(32);
-    const dekId = utils.sha256(Buffer.from(dek)).toString("hex");
-    const dekServerEncrypted = await encryptWithSymmKey(dek.toString("hex"));
     const userDb: db.User = {
       passkey: {id: pkId, ...passkey.pubKey},
       operator: operator.address,
-      metadata: ethers.ZeroHash,
-      kek: eciesKey.pubKey,
-      deks: {[dekId]: dekServerEncrypted},
+      metadata,
       loginStatus: {
         challenge,
         updatedAt: new Timestamp(utils.epoch(), 0),
@@ -308,18 +291,17 @@ describe("registerPasskey", () => {
 
     jest
         .spyOn(db, "postAuth")
-        .mockImplementation((_uid: string, kek: string) => {
-          userDb.kek = kek;
+        .mockImplementation((_uid: string, csrfToken: string) => {
+          userDb.csrfToken = csrfToken;
           return Promise.resolve();
         });
     jest.spyOn(db, "getUser").mockImplementation(() => Promise.resolve(userDb));
     const invalidChallenge = utils.sha256("invalid_challenge").toString("hex");
-    const newKek = genEciesKey();
     const invalidLoginReq = buildLoginRequest(
         account,
-        dekId,
-        newKek.pubKey,
-        invalidChallenge
+        invalidChallenge,
+        encryptedSalt,
+        newSalt
     );
     const firstDone = Promise.resolve();
     const loginRes = buildResponse(400, (response: any) => {
@@ -332,64 +314,14 @@ describe("registerPasskey", () => {
     // valid client data but invalid signature
     const validLoginReq = buildLoginRequest(
         account,
-        dekId,
-        newKek.pubKey,
-        challenge
+        challenge,
+        encryptedSalt,
+        newSalt
     );
     invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
     const loginRes2 = buildResponse(400, (response: any) => {
       expect(response.message).toEqual("invalid signature");
     });
     await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
-  });
-
-  test("it should get dek and new dek", async () => {
-    const username = "some.user.mizu";
-    const userId = utils.genNameHash(username);
-    const dek = crypto.randomBytes(32).toString("hex");
-    const dekId = utils.sha256(Buffer.from(dek, "hex")).toString("hex");
-    const dekServerEncrypted = await encryptWithSymmKey(dek);
-    const userDb = {
-      kek: eciesKey.pubKey,
-      deks: {[dekId]: dekServerEncrypted},
-    };
-
-    jest
-        .spyOn(db, "getUser")
-        .mockImplementation(() => {
-          return Promise.resolve(userDb as unknown as db.User);
-        });
-    jest
-        .spyOn(db, "updateDeks")
-        .mockImplementation(
-            async (_uid: string, deks: { [key: string]: string }) => {
-              userDb.deks = deks;
-              return Promise.resolve();
-            }
-        );
-    const req = {
-      headers: {
-        origin: true,
-        authorization: "Bearer " + userId,
-      },
-      body: {keyId: dekId},
-    };
-    const res = buildResponse(200, async (response: any) => {
-      const dekFromClient = decrypt(
-          eciesKey.privKey.secret,
-          Buffer.from(response.dek, "hex")
-      ).toString("hex");
-      const dekFromServer = await decryptWithSymmKey(userDb.deks[dekId]);
-      expect(dekFromServer).toEqual(dekFromClient);
-
-      const newDekFromClient = decrypt(
-          eciesKey.privKey.secret,
-          Buffer.from(response.newDek, "hex")
-      );
-      const newDekId = utils.sha256(newDekFromClient).toString("hex");
-      const newDekFromServer = await decryptWithSymmKey(userDb.deks[newDekId]);
-      expect(newDekFromServer).toEqual(newDekFromClient.toString("hex"));
-    });
-    await auth.getDataEncryptionKey(req as any, res as any);
   });
 });

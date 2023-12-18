@@ -11,7 +11,8 @@ exports.registerUserWithPasskey = auth.registerUserWithPasskey;
 exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
 exports.sessionLogin = auth.sessionLogin;
-exports.getDataEncryptionKey = auth.getDataEncryptionKey;
+exports.encrypt = auth.encrypt;
+exports.getDek = auth.getDek;
 
 exports.requestToReset = zkp.requestToReset;
 exports.queryResetStatus = zkp.queryResetStatus;

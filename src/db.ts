@@ -11,18 +11,16 @@ export interface Passkey {
 
 // use address as key for user
 export interface User {
-    passkey: Passkey;
-    operator: string; // operator address
-    metadata: string; // metadata for user
-    kek: string; // stored at client side to decrypt the dek from server
-    deks: {[key: string]: string};
-    loginStatus: {
-        challenge: string,
-        updatedAt: Timestamp,
-    };
-    createdAt: Timestamp;
-    csrfToken: string;
-    name?: string;
+  passkey: Passkey;
+  operator: string; // operator address
+  metadata: string; // metadata for user
+  loginStatus: {
+    challenge: string;
+    updatedAt: Timestamp;
+  };
+  createdAt: Timestamp;
+  csrfToken: string;
+  name?: string;
 }
 
 export interface NameData {
@@ -33,9 +31,7 @@ const firestore = () => {
   return admin.firestore();
 };
 
-export async function resolveName(
-    uid: string
-) {
+export async function resolveName(uid: string) {
   const name = await firestore().collection("mns").doc(uid).get();
   if (name && name.exists) {
     return (name.data() as NameData).address;
@@ -49,10 +45,8 @@ export async function registerUser(
     passkey: Passkey,
     operator: string,
     metadata: string,
-    kek: string,
-    deks: {[key: string]: string},
     csrfToken: string,
-    name: string,
+    name: string
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
@@ -67,8 +61,6 @@ export async function registerUser(
       passkey,
       operator,
       metadata,
-      kek,
-      deks,
       createdAt: new Timestamp(epoch(), 0),
       loginStatus: {
         challenge: "",
@@ -80,22 +72,16 @@ export async function registerUser(
   });
 }
 
-export async function getUser(
-    address: string,
-) : Promise<User | null> {
-  const result = await firestore().collection(
-      "users").doc(address).get();
+export async function getUser(address: string): Promise<User | null> {
+  const result = await firestore().collection("users").doc(address).get();
   if (result && result.exists) {
     return result.data() as User;
   }
   return null;
 }
 
-export async function userExist(
-    address: string,
-) : Promise<boolean> {
-  const result = await firestore().collection(
-      "users").doc(address).get();
+export async function userExist(address: string): Promise<boolean> {
+  const result = await firestore().collection("users").doc(address).get();
   if (result && result.exists) {
     return true;
   }
@@ -103,55 +89,44 @@ export async function userExist(
 }
 
 export async function preAuth(address: string, challenge: string) {
-  await firestore().collection("users").doc(address).update({
-    loginStatus: {
-      challenge: challenge,
-      updatedAt: new Timestamp(epoch(), 0),
-    },
-  });
+  await firestore()
+      .collection("users")
+      .doc(address)
+      .update({
+        loginStatus: {
+          challenge: challenge,
+          updatedAt: new Timestamp(epoch(), 0),
+        },
+      });
 }
 
 export async function postAuth(
     address: string,
-    kek: string,
-    csrfToken: string,
-    deks?: {[key: string]: string}
+    csrfToken: string
 ) {
   const loginStatus = {
     challenge: "",
     updatedAt: new Timestamp(epoch(), 0),
   };
-  if (deks) {
-    await firestore().collection("users").doc(
-        address).update({kek, deks, loginStatus, csrfToken});
-  } else {
-    await firestore().collection("users").doc(
-        address).update({kek, loginStatus, csrfToken});
-  }
-}
-
-export async function updateDeks(
-    address: string,
-    deks: {[key: string]: string}
-) {
-  await firestore().collection("users").doc(address).update({deks});
+  await firestore()
+      .collection("users")
+      .doc(address)
+      .update({loginStatus, csrfToken});
 }
 
 export interface ZKP {
-    uid: string;
-    status: "processing" | "done" | "error";
-    proof: OidcZkProof | null; // for done status
-    error: string | null; // for error status
-    chain: Chain,
-    userOp: UserOperationStruct;
-    jwtInput: JwtInput,
-    createdAt: Timestamp;
-    finishedAt: Timestamp | null;
+  uid: string;
+  status: "processing" | "done" | "error";
+  proof: OidcZkProof | null; // for done status
+  error: string | null; // for error status
+  chain: Chain;
+  userOp: UserOperationStruct;
+  jwtInput: JwtInput;
+  createdAt: Timestamp;
+  finishedAt: Timestamp | null;
 }
 
-export async function getZkp(
-    uid: string,
-) : Promise<ZKP | null> {
+export async function getZkp(uid: string): Promise<ZKP | null> {
   const result = await firestore().collection("zkp").doc(uid).get();
   if (result && result.exists) {
     return result.data() as ZKP;
@@ -163,34 +138,30 @@ export async function addNewZkpRequest(
     uid: string,
     jwtInput: JwtInput,
     chain: Chain,
-    userOp: UserOperationStruct,
+    userOp: UserOperationStruct
 ) {
-  await firestore().collection("zkp").doc(uid).set({
-    status: "processing",
-    jwtInput,
-    chain,
-    userOp,
-    createdAt: new Timestamp(epoch(), 0),
-  });
+  await firestore()
+      .collection("zkp")
+      .doc(uid)
+      .set({
+        status: "processing",
+        jwtInput,
+        chain,
+        userOp,
+        createdAt: new Timestamp(epoch(), 0),
+      });
 }
 
-export async function addZkProof(
-    uid: string,
-    proof: string,
-) {
+export async function addZkProof(uid: string, proof: string) {
   await firestore().collection("zkp").doc(uid).update({
     status: "done",
     proof,
   });
 }
 
-export async function markZkProofError(
-    uid: string,
-    error: string,
-) {
+export async function markZkProofError(uid: string, error: string) {
   await firestore().collection("zkp").doc(uid).update({
     status: "error",
     error,
   });
 }
-

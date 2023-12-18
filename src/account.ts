@@ -17,14 +17,16 @@ function formatHex(hex: string) {
 }
 
 export function buildPasskeyAdminData(passkey: Passkey) {
-  const admin = new ethers.Interface(PasskeyAdmin__factory.abi);
-  const adminData = admin.encodeFunctionData("setPasskey", [
-    {
-      pubKeyX: BigInt(formatHex(passkey.x)),
-      pubKeyY: BigInt(formatHex(passkey.y)),
-    },
-    passkey.id,
-  ]);
+  const adminData = PasskeyAdmin__factory.createInterface().encodeFunctionData(
+      "setPasskey",
+      [
+        {
+          pubKeyX: BigInt(formatHex(passkey.x)),
+          pubKeyY: BigInt(formatHex(passkey.y)),
+        },
+        passkey.id,
+      ]
+  );
   return ethers.solidityPacked(
       ["address", "bytes"],
       [secrets.CONTRACT_V0_0_8_PASSSKEY_ADMIN!, adminData]
@@ -36,12 +38,10 @@ export function buildAccountInitData(
     operator: string,
     metadata: string
 ) {
-  const account = new ethers.Interface(OpenId3Account__factory.abi);
-  return account.encodeFunctionData("initialize", [
-    buildPasskeyAdminData(passkey),
-    operator,
-    formatHex(metadata),
-  ]);
+  return OpenId3Account__factory.createInterface().encodeFunctionData(
+      "initialize",
+      [buildPasskeyAdminData(passkey), operator, formatHex(metadata)]
+  );
 }
 
 function predictDeterministicAddress(
