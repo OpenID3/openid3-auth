@@ -53,10 +53,11 @@ describe("registerPasskey", () => {
   let operator: ethers.HDNodeWallet;
   let pkId: string;
   const metadata: string = ethers.ZeroHash.slice(2);
-  const salt = crypto.randomBytes(32).toString("hex");
-  const newSalt = crypto.randomBytes(32).toString("hex");
-  let encryptedSalt: string;
-  let encryptedNewSalt: string;
+  const dek = crypto.randomBytes(32).toString("hex");
+  const newDek = crypto.randomBytes(32).toString("hex");
+  let account: string;
+  let encryptedDek: string;
+  let encryptedNewDek: string;
 
   beforeAll(async () => {
     jest.clearAllMocks();
@@ -64,8 +65,14 @@ describe("registerPasskey", () => {
     pkId = "passkey1";
     passkey = genPasskey(pkId);
     operator = ethers.Wallet.createRandom();
-    encryptedSalt = await encryptWithSymmKey(salt);
-    encryptedNewSalt = await encryptWithSymmKey(newSalt);
+    account = getAccountAddress(
+        passkey.pubKey,
+        operator.address,
+        metadata
+    );
+    const aad = utils.toBuffer(account);
+    encryptedDek = await encryptWithSymmKey(dek, aad) as string;
+    encryptedNewDek = await encryptWithSymmKey(newDek, aad) as string;
   });
 
   const buildRegisterRequest = (username: string) => {
@@ -75,7 +82,7 @@ describe("registerPasskey", () => {
         passkey,
         operator.address,
         metadata,
-        salt
+        dek
     );
     return {
       headers: {origin: true},
@@ -87,7 +94,7 @@ describe("registerPasskey", () => {
         authData,
         signature: signature.toCompactHex(),
         metadata,
-        salt,
+        dek,
       },
     };
   };
@@ -95,16 +102,14 @@ describe("registerPasskey", () => {
   const buildLoginRequest = (
       address: string,
       challenge: string,
-      encryptedSalt?: string,
-      newSalt?: string
   ) => {
     const {clientDataJson, authData, signature} = signLoginRequest(
         address,
         ORIGIN,
         challenge,
         passkey,
-        encryptedSalt,
-        newSalt
+        encryptedDek,
+        newDek
     );
     return {
       headers: {origin: true},
@@ -113,8 +118,8 @@ describe("registerPasskey", () => {
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
-        encryptedSalt,
-        newSalt,
+        dek: encryptedDek,
+        newDek,
       },
     };
   };
@@ -138,7 +143,7 @@ describe("registerPasskey", () => {
     const username = "SOME.user.mizu";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("token");
-      expect(encryptedSalt).toEqual(response.encryptedSalt);
+      expect(encryptedDek).toEqual(response.dek);
       done();
     };
     const req = buildRegisterRequest(username);
@@ -202,7 +207,7 @@ describe("registerPasskey", () => {
     const username = "some.user.mizu";
     const userId = utils.genNameHash(username);
     const userDb: db.User = {
-      passkey: {id: pkId, ...passkey.pubKey},
+      passkey: passkey.pubKey,
       operator: operator.address,
       metadata,
       loginStatus: {
@@ -212,11 +217,6 @@ describe("registerPasskey", () => {
       createdAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-    const account = getAccountAddress(
-        userDb.passkey,
-        userDb.operator,
-        userDb.metadata
-    );
 
     jest
         .spyOn(db, "preAuth")
@@ -251,19 +251,13 @@ describe("registerPasskey", () => {
     const loginReq = buildLoginRequest(
         account,
         userDb.loginStatus.challenge,
-        encryptedSalt,
-        newSalt
     );
     const secondDone = Promise.resolve();
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
-      const expectedDek = ethers.solidityPackedKeccak256(
-          ["bytes32", "bytes32"],
-          ["0x" + salt, ethers.zeroPadValue(account, 32)]
-      );
-      expect(expectedDek.slice(2)).toEqual(response.dek);
-      expect(encryptedNewSalt).toEqual(response.encryptedNewSalt);
       expect(userDb.csrfToken).toEqual(response.csrfToken);
+      expect(dek).toEqual(response.dek);
+      expect(encryptedNewDek).toEqual(response.newDek);
       secondDone;
     });
     await auth.loginWithPasskey(loginReq as any, loginRes as any);
@@ -273,7 +267,7 @@ describe("registerPasskey", () => {
   test("it should throw if challenge or origin does not match", async () => {
     const challenge = utils.sha256("valid_challenge").toString("hex");
     const userDb: db.User = {
-      passkey: {id: pkId, ...passkey.pubKey},
+      passkey: passkey.pubKey,
       operator: operator.address,
       metadata,
       loginStatus: {
@@ -283,12 +277,6 @@ describe("registerPasskey", () => {
       createdAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-    const account = getAccountAddress(
-        userDb.passkey,
-        userDb.operator,
-        userDb.metadata
-    );
-
     jest
         .spyOn(db, "postAuth")
         .mockImplementation((_uid: string, csrfToken: string) => {
@@ -300,8 +288,6 @@ describe("registerPasskey", () => {
     const invalidLoginReq = buildLoginRequest(
         account,
         invalidChallenge,
-        encryptedSalt,
-        newSalt
     );
     const firstDone = Promise.resolve();
     const loginRes = buildResponse(400, (response: any) => {
@@ -315,8 +301,6 @@ describe("registerPasskey", () => {
     const validLoginReq = buildLoginRequest(
         account,
         challenge,
-        encryptedSalt,
-        newSalt
     );
     invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
     const loginRes2 = buildResponse(400, (response: any) => {

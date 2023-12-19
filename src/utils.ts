@@ -89,3 +89,8 @@ const nameHash = (name: string): string => {
     );
   }
 };
+
+export const toBuffer = (data: string): Buffer => {
+  data = data.startsWith("0x") ? data.slice(2) : data;
+  return Buffer.from(data, "hex");
+};

@@ -6,7 +6,13 @@ import {secp256r1} from "@noble/curves/p256";
 import {ethers} from "ethers";
 import * as cookie from "cookie";
 
-import {HexlinkError, epoch, genNameHash, handleError} from "./utils";
+import {
+  HexlinkError,
+  epoch,
+  genNameHash,
+  handleError,
+  toBuffer,
+} from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {
   checkNameRateLimit,
@@ -148,14 +154,14 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
  *  clientDataJson: string,
  *  authData: string, // hex
  *  signature: string, // hex
- *  salt: string,
+ *  dek: string,
  * }
  *
  * res: {
  *   address: string,
  *   token: string,
- *   encryptedSalt: string, // ciphertext
  *   csrfToken: string,
+ *   dek: string,
  * }
  */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
@@ -164,7 +170,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const uid = genNameHash(req.body.username);
+      const nameHash = genNameHash(req.body.username);
       const address = getAccountAddress(
           req.body.passkey,
           req.body.operator,
@@ -178,7 +184,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
                 Buffer.from(req.body.username, "utf-8"), // username
                 Buffer.from(req.body.operator, "hex"), // operator
                 Buffer.from(req.body.metadata, "hex"), // metadata
-                Buffer.from(req.body.salt, "hex"), // salt
+                Buffer.from(req.body.dek, "hex"), // dek
               ])
           )
           .digest("base64");
@@ -193,9 +199,9 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.passkey
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
-      const [, encryptedSalt, token] = await Promise.all([
+      const [, dek, token] = await Promise.all([
         registerUser(
-            uid,
+            nameHash,
             address,
             req.body.passkey,
             req.body.operator,
@@ -203,14 +209,14 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
             csrfToken,
             req.body.username
         ),
-        encryptWithSymmKey(req.body.salt),
+        encryptWithSymmKey(req.body.dek, toBuffer(address)),
         createNewUser(address),
       ]);
       res.status(200).json({
         address,
         token: token,
         csrfToken,
-        encryptedSalt,
+        dek,
       });
     } catch (err: unknown) {
       handleError(res, err);
@@ -218,9 +224,9 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
   });
 });
 
-async function createNewUser(uid: string): Promise<string> {
-  await admin.auth().createUser({uid});
-  return admin.auth().createCustomToken(uid);
+async function createNewUser(address: string): Promise<string> {
+  await admin.auth().createUser({uid: address});
+  return admin.auth().createCustomToken(address);
 }
 
 /**
@@ -267,15 +273,15 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *   clientDataJson: string,
  *   authData: string, // hex
  *   signature: string, // hex
- *   encryptedSalt?: string, // ciphertext
- *   newSalt?: string, // plaintext
+ *   dek?: string, // to decrypt
+ *   newDek?: string, // to encrypt
  * }
  *
  * res: {
  *   token: string,
  *   csrfToken: string,
- *   dek?: string, // if encryptedSalt is provided
- *   encryptedNewSalt?: string, // ciphertext, if newSalt is provided
+ *   dek?: string, // decrypted
+ *   newDek?: string, // encrypted
  * }
  */
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
@@ -298,8 +304,8 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
                 Buffer.from("login", "utf-8"), // action
                 Buffer.from(req.body.address, "hex"), // address
                 Buffer.from(user.loginStatus.challenge, "hex"), // challenge
-                Buffer.from(req.body.newSalt ?? ethers.ZeroHash, "hex"), // new salt
-                Buffer.from(req.body.encryptedSalt ?? "", "utf-8"), // salt
+                Buffer.from(req.body.dek ?? "", "utf-8"), // encrypted dek
+                Buffer.from(req.body.newDek ?? ethers.ZeroHash, "hex"), // new dek
               ])
           )
           .digest("base64");
@@ -314,18 +320,15 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           user.passkey
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
-      const promises = [
+      const aad = toBuffer(req.body.address);
+      console.log("aad: ", req.body.address);
+      const [, token, dek, newDek] = await Promise.all([
         postAuth(req.body.address, csrfToken),
         admin.auth().createCustomToken(req.body.address),
-      ];
-      if (req.body.encryptedSalt) {
-        promises.push(genDekFromSalt(req.body.encryptedSalt, req.body.address));
-      }
-      if (req.body.newSalt) {
-        promises.push(encryptWithSymmKey(req.body.newSalt));
-      }
-      const [, token, dek, encryptedNewSalt] = await Promise.all(promises);
-      res.status(200).json({token, csrfToken, dek, encryptedNewSalt});
+        decryptWithSymmKey(req.body.dek, aad),
+        encryptWithSymmKey(req.body.newDek, aad),
+      ]);
+      res.status(200).json({token, csrfToken, dek, newDek});
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -383,15 +386,17 @@ export const sessionLogin = functions.https.onRequest((req, res) => {
 
 /**
  * req.body: {
- *   salt: string, // plaintext
+ *   dek: string, // to decrypt
+ *   newDek?: string, // to encrypt
  *   csrfToken: string,
  * }
  *
  * res: {
- *   encryptedSalt: string, // ciphertext
+ *   dek: string, // decrypted
+ *   newDek?: string, // encrypted
  * }
  */
-export const encrypt = functions.https.onRequest((req, res) => {
+export const getDeks = functions.https.onRequest((req, res) => {
   cors({origin: true, credentials: true})(req, res, async () => {
     try {
       const claims = await verifySessionCookie(req);
@@ -399,56 +404,17 @@ export const encrypt = functions.https.onRequest((req, res) => {
       if (!user || req.body.csrfToken != user?.csrfToken) {
         throw new HexlinkError(401, "Access denied");
       }
-      const encryptedSalt = await encryptWithSymmKey(req.body.salt);
-      res.status(200).json({encryptedSalt});
+      const aad = toBuffer(claims.uid);
+      const [dek, newDek] = await Promise.all([
+        decryptWithSymmKey(req.body.dek, aad),
+        encryptWithSymmKey(req.body.newDek, aad),
+      ]);
+      res.status(200).json({dek, newDek});
     } catch (err: unknown) {
       handleError(res, err);
     }
   });
 });
-
-/**
- * req.body: {
- *   csrfToken: string,
- *   encryptedSalt: string, // ciphertext
- *   newSalt?: string,
- * }
- *
- * res: {
- *   dek: string,
- *   encryptedNewSalt?: string, // ciphertext, if newSalt is provided
- * }
- */
-export const getDek = functions.https.onRequest((req, res) => {
-  cors({origin: true, credentials: true})(req, res, async () => {
-    try {
-      const claims = await verifySessionCookie(req);
-      const user = await getUser(claims.uid);
-      if (!user || req.body.csrfToken != user?.csrfToken) {
-        throw new HexlinkError(401, "Access denied");
-      }
-      const promises = [genDekFromSalt(req.body.encryptedSalt, claims.uid)];
-      if (req.body.newSalt) {
-        promises.push(encryptWithSymmKey(req.body.newSalt));
-      }
-      const [dek, encryptedNewSalt] = await Promise.all(promises);
-      res.status(200).json({dek, encryptedNewSalt});
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
-  });
-});
-
-export const genDekFromSalt = async (salt: string, uid: string) => {
-  uid = ethers.zeroPadValue(uid, 32);
-  const decryptedSalt = await decryptWithSymmKey(salt);
-  return ethers
-      .solidityPackedKeccak256(
-          ["bytes32", "bytes32"],
-          ["0x" + decryptedSalt, uid]
-      )
-      .slice(2);
-};
 
 export const verifySessionCookie = async (req: functions.Request) => {
   const sessionCookie = cookie.parse(req.headers.cookie || "");

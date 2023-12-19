@@ -6,7 +6,7 @@ import crypto from "crypto";
 
 const secrets = functions.config().doppler;
 const client = new kms.KeyManagementServiceClient();
-const DEV_ENC_ALGORITHM = "aes-256-cbc";
+const DEV_ENC_ALGORITHM = "aes-256-gcm";
 
 const encryptorConfig = () => ({
   projectId: secrets.FIREBASE_PROJECT_ID,
@@ -21,30 +21,44 @@ const getSymmKeyName = async function() {
       config.projectId,
       config.locationId,
       config.keyRingId,
-      config.keyId);
+      config.keyId
+  );
 };
 
-const encryptWithDevKey = (plaintext: string) => {
+const encryptWithDevKey = (plaintext: string, aad: Buffer) => {
   const key = Buffer.from(secrets.DEV_KEY, "hex");
   const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
   const cipher = crypto.createCipheriv(DEV_ENC_ALGORITHM, key, iv);
+  cipher.setAAD(aad);
   const encrypted = cipher.update(plaintext);
-  return Buffer.concat([encrypted, cipher.final()]).toString("base64");
+  const result = Buffer.concat([encrypted, cipher.final()]).toString("base64");
+  return JSON.stringify({
+    encrypted: result,
+    authTag: cipher.getAuthTag().toString("hex"),
+  });
 };
 
-const decryptWithDevKey = (text: string) => {
-  const ciphertext = Buffer.from(text, "base64");
+const decryptWithDevKey = (text: string, aad: Buffer) => {
+  const {encrypted, authTag} = JSON.parse(text);
+  const ciphertext = Buffer.from(encrypted, "base64");
   const key = Buffer.from(secrets.DEV_KEY, "hex");
   const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-  let decrypted = decipher.update(ciphertext);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString("utf-8");
+  const decipher = crypto.createDecipheriv(DEV_ENC_ALGORITHM, key, iv);
+  decipher.setAAD(aad);
+  decipher.setAuthTag(Buffer.from(authTag, "hex"));
+  const decrypted = decipher.update(ciphertext);
+  return Buffer.concat([decrypted, decipher.final()]).toString("utf-8");
 };
 
-export const encryptWithSymmKey = async function(plaintext: string) {
+export const encryptWithSymmKey = async function(
+    plaintext: string,
+    aad: Buffer
+) {
+  if (plaintext === undefined) {
+    return undefined;
+  }
   if (secrets.ENV === "dev") {
-    return encryptWithDevKey(plaintext);
+    return encryptWithDevKey(plaintext, aad);
   }
   const plaintextBuffer = Buffer.from(plaintext);
   const keyName = await getSymmKeyName();
@@ -53,6 +67,7 @@ export const encryptWithSymmKey = async function(plaintext: string) {
   const [encryptResponse] = await client.encrypt({
     name: keyName,
     plaintext: plaintextBuffer,
+    additionalAuthenticatedData: aad,
     plaintextCrc32c: {
       value: plaintextCrc32c,
     },
@@ -60,25 +75,35 @@ export const encryptWithSymmKey = async function(plaintext: string) {
 
   const ciphertext = encryptResponse.ciphertext;
 
-  if (!ciphertext || !encryptResponse.verifiedPlaintextCrc32c ||
+  if (
+    !ciphertext ||
+    !encryptResponse.verifiedPlaintextCrc32c ||
     !encryptResponse.ciphertextCrc32c ||
     crc32c.calculate(ciphertext) !==
-    Number(encryptResponse.ciphertextCrc32c!.value)) {
+      Number(encryptResponse.ciphertextCrc32c!.value)
+  ) {
     throw new Error("Encrypt: request corrupted in-transit");
   }
 
   return Buffer.from(ciphertext).toString("base64");
 };
 
-export const decryptWithSymmKey = async function(text: string) {
+export const decryptWithSymmKey = async function(
+    text: string | undefined,
+    aad: Buffer
+) {
+  if (text === undefined) {
+    return undefined;
+  }
   if (secrets.ENV === "dev") {
-    return decryptWithDevKey(text);
+    return decryptWithDevKey(text, aad);
   }
   const ciphertext = Buffer.from(text, "base64");
   const keyName = await getSymmKeyName();
   const ciphertextCrc32c = crc32c.calculate(ciphertext);
   const [decryptResponse] = await client.decrypt({
     name: keyName,
+    additionalAuthenticatedData: aad,
     ciphertext: ciphertext,
     ciphertextCrc32c: {
       value: ciphertextCrc32c,
@@ -86,8 +111,10 @@ export const decryptWithSymmKey = async function(text: string) {
   });
   const plaintextBuffer = Buffer.from(decryptResponse.plaintext!);
 
-  if (crc32c.calculate(plaintextBuffer) !==
-      Number(decryptResponse.plaintextCrc32c!.value)) {
+  if (
+    crc32c.calculate(plaintextBuffer) !==
+    Number(decryptResponse.plaintextCrc32c!.value)
+  ) {
     throw new Error("Decrypt: response corrupted in-transit");
   }
 

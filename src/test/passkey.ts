@@ -2,13 +2,14 @@ import {secp256r1} from "@noble/curves/p256";
 import {PrivateKey} from "eciesjs";
 import crypto from "crypto";
 import {ethers} from "ethers";
+import {Passkey} from "../db";
 
 export interface Key {
     privKey: Uint8Array | Buffer,
-    pubKey: {x: string, y: string},
+    pubKey: Passkey,
 }
 
-export const genPasskey = (id: string): any => {
+export const genPasskey = (id: string): Key => {
   const privKey = secp256r1.utils.randomPrivateKey();
   const pubKey = secp256r1.getPublicKey(privKey);
   const point = secp256r1.ProjectivePoint.fromHex(pubKey);
@@ -57,7 +58,7 @@ export const signRegisterRequest = (
     passkey: any,
     operator: string,
     metadata: string,
-    salt: string,
+    dek: string,
 ) => {
   const challenge = crypto.createHash("sha256").update(
       Buffer.concat([
@@ -65,7 +66,7 @@ export const signRegisterRequest = (
         Buffer.from(username, "utf-8"), // username
         Buffer.from(operator, "hex"), // operator
         Buffer.from(metadata, "hex"), // metadata
-        Buffer.from(salt, "hex"), // salt
+        Buffer.from(dek, "hex"), // salt
       ])
   ).digest("base64");
   return signWithPasskey(challenge, origin, passkey);
@@ -76,16 +77,16 @@ export const signLoginRequest = (
     origin: string,
     challenge: string,
     passkey: any,
-    encryptedSalt?: string, // ciphertext
-    newSalt?: string, // plaintext
+    dek: string, // ciphertext
+    newDek?: string, // plaintext
 ) => {
   const signedChallenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("login", "utf-8"), // action
         Buffer.from(address, "hex"), // address
         Buffer.from(challenge, "hex"), // challenge
-        Buffer.from(newSalt ?? ethers.ZeroHash, "hex"), // new salt
-        Buffer.from(encryptedSalt ?? "", "utf-8"), // salt
+        Buffer.from(dek ?? "", "utf-8"), // dek
+        Buffer.from(newDek ?? ethers.ZeroHash, "hex"), // new dek
       ])
   ).digest("base64");
   return signWithPasskey(signedChallenge, origin, passkey);
