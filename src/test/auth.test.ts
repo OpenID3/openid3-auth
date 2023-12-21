@@ -83,6 +83,7 @@ describe("registerPasskey", () => {
       headers: {origin: true},
       body: {
         username,
+        address: account,
         passkey: passkey.pubKey,
         operator: operator.address,
         clientDataJson,
@@ -135,7 +136,7 @@ describe("registerPasskey", () => {
   };
 
   test("it should register a new user with passkey", (done: any) => {
-    const username = "SOME.user.mizu";
+    const username = "peter.mizu";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("token");
       expect(encryptedDek).toEqual(response.dek);
@@ -259,25 +260,36 @@ describe("registerPasskey", () => {
       updatedAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
+    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
+
     jest
         .spyOn(adb, "postAuth")
         .mockImplementation((_uid: string, csrfToken: string) => {
           authDb.csrfToken = csrfToken;
           return Promise.resolve();
         });
-    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
-    const invalidChallenge = utils.sha256("invalid_challenge").toString("hex");
-    const invalidLoginReq = buildLoginRequest(
-        account,
-        invalidChallenge,
-    );
+
+    // challenge not set in server
+    const loginReq1 = buildLoginRequest(account, challenge);
     const firstDone = Promise.resolve();
-    const loginRes = buildResponse(400, (response: any) => {
-      expect(response.message).toEqual("invalid client data");
+    const loginRes1 = buildResponse(404, (response: any) => {
+      expect(response.message).toEqual("User not found or challenge not set");
       firstDone;
     });
-    await auth.loginWithPasskey(invalidLoginReq as any, loginRes as any);
+    await auth.loginWithPasskey(loginReq1 as any, loginRes1 as any);
     await firstDone;
+
+    // challenge mismatch
+    authDb.challenge = challenge;
+    const invalidChallenge = utils.sha256("invalid_challenge").toString("hex");
+    const invalidLoginReq = buildLoginRequest(account, invalidChallenge);
+    const secondDone = Promise.resolve();
+    const loginRes2 = buildResponse(400, (response: any) => {
+      expect(response.message).toEqual("invalid client data");
+      secondDone;
+    });
+    await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
+    await secondDone;
 
     // valid client data but invalid signature
     const validLoginReq = buildLoginRequest(
@@ -285,9 +297,9 @@ describe("registerPasskey", () => {
         challenge,
     );
     invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
-    const loginRes2 = buildResponse(400, (response: any) => {
+    const loginRes3 = buildResponse(400, (response: any) => {
       expect(response.message).toEqual("invalid signature");
     });
-    await auth.loginWithPasskey(invalidLoginReq as any, loginRes2 as any);
+    await auth.loginWithPasskey(invalidLoginReq as any, loginRes3 as any);
   });
 });

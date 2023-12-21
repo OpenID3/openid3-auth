@@ -2,7 +2,7 @@ import {secp256r1} from "@noble/curves/p256";
 import {PrivateKey} from "eciesjs";
 import crypto from "crypto";
 import {ethers} from "ethers";
-import {genNameHash} from "../utils";
+import {genNameHash, toBuffer} from "../utils";
 import {Passkey} from "../db/utils";
 
 export interface Key {
@@ -66,11 +66,11 @@ export const signRegisterRequest = (
   const challenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("register", "utf-8"), // action
-        Buffer.from(uid, "hex"), // username
-        Buffer.from(address, "hex"), // address
-        Buffer.from(operator, "hex"), // operator
-        Buffer.from(metadata, "hex"), // metadata
-        Buffer.from(dek, "hex"), // salt
+        toBuffer(uid), // username
+        toBuffer(address), // address
+        toBuffer(operator), // operator
+        toBuffer(metadata), // metadata
+        toBuffer(dek), // dek
       ])
   ).digest("base64");
   return signWithPasskey(challenge, origin, passkey);
@@ -87,10 +87,10 @@ export const signLoginRequest = (
   const signedChallenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("login", "utf-8"), // action
-        Buffer.from(address, "hex"), // address
-        Buffer.from(challenge, "hex"), // challenge
-        Buffer.from(dek ?? "", "utf-8"), // dek
-        Buffer.from(newDek ?? ethers.ZeroHash, "hex"), // new dek
+        toBuffer(address), // address
+        toBuffer(challenge), // challenge
+        Buffer.from(dek ?? "", "utf-8"), // encrypted dek
+        toBuffer(newDek ?? ethers.ZeroHash), // new dek
       ])
   ).digest("base64");
   return signWithPasskey(signedChallenge, origin, passkey);

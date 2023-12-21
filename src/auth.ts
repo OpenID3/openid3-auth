@@ -61,11 +61,11 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           .update(
               Buffer.concat([
                 Buffer.from("register", "utf-8"), // action
-                Buffer.from(req.body.nameHash, "hex"), // uid
-                Buffer.from(req.body.address, "hex"), // address
-                Buffer.from(req.body.operator, "hex"), // operator
-                Buffer.from(req.body.metadata, "hex"), // metadata
-                Buffer.from(req.body.dek, "hex"), // dek
+                toBuffer(nameHash), // uid
+                toBuffer(address), // address
+                toBuffer(req.body.operator), // operator
+                toBuffer(req.body.metadata), // metadata
+                toBuffer(req.body.dek), // dek
               ])
           )
           .digest("base64");
@@ -176,10 +176,10 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           .update(
               Buffer.concat([
                 Buffer.from("login", "utf-8"), // action
-                Buffer.from(req.body.address, "hex"), // address
-                Buffer.from(auth.challenge, "hex"), // challenge
+                toBuffer(req.body.address), // address
+                toBuffer(auth.challenge), // challenge
                 Buffer.from(req.body.dek ?? "", "utf-8"), // encrypted dek
-                Buffer.from(req.body.newDek ?? ethers.ZeroHash, "hex"), // new dek
+                toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
               ])
           )
           .digest("base64");
