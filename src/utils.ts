@@ -43,29 +43,29 @@ export const INVALID_USER_NAME_DISALLOWED_CHARACTERS =
   "invalid username: disallowed characters";
 export const INVALID_USER_NAME_NON_MIZU_NAME =
   "invalid username: must end with mizu";
+export const SUBDOMAIN_NOT_ALLOWED =
+  "invalid username: subdomain not allowed";
 
 export const genNameHash = (username: string) => {
-  username = username.trim().toLowerCase();
-  validateUsername(username);
+  username = validateUsername(username);
   return nameHash(username).slice(2); // remove 0x
 };
 
 // the name is with .mizu suffix
 const validateUsername = (username: string) => {
-  if (username.length < 10) {
-    throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
-  }
-  const labels = username.split(".");
-  if (labels[labels.length - 1] != "mizu") {
+  username = username.trim().toLowerCase();
+  if (!username.endsWith(".mizu")) {
     throw new HexlinkError(400, INVALID_USER_NAME_NON_MIZU_NAME);
   }
-  for (const label of labels) {
-    if (label.length == 0) {
-      throw new HexlinkError(400, INVALID_USER_NAME_EMTPY_LABEL);
-    }
-    if (!/^[a-z0-9]+$/.test(label)) {
-      throw new HexlinkError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
-    }
+  const labels = username.split(".");
+  if (labels.length > 2) {
+    throw new HexlinkError(400, SUBDOMAIN_NOT_ALLOWED);
+  }
+  if (labels[0].length < 5) {
+    throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
+  }
+  if (!/^[a-z0-9]+$/.test(labels[0])) {
+    throw new HexlinkError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
   }
   return username;
 };

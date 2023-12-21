@@ -42,7 +42,7 @@ import * as utils from "../utils";
 import {Timestamp} from "@google-cloud/firestore";
 import {encryptWithSymmKey} from "../gcloudKms";
 import {ethers} from "ethers";
-import {HexlinkError} from "../utils";
+import {HexlinkError, genNameHash} from "../utils";
 
 jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(null));
 jest.spyOn(adb, "registerUser").mockImplementation(() => Promise.resolve());
@@ -65,8 +65,8 @@ describe("registerPasskey", () => {
     passkey = genPasskey(pkId);
     operator = ethers.Wallet.createRandom();
     const aad = utils.toBuffer(account);
-    encryptedDek = await encryptWithSymmKey(dek, aad) as string;
-    encryptedNewDek = await encryptWithSymmKey(newDek, aad) as string;
+    encryptedDek = (await encryptWithSymmKey(dek, aad)) as string;
+    encryptedNewDek = (await encryptWithSymmKey(newDek, aad)) as string;
   });
 
   const buildRegisterRequest = (username: string) => {
@@ -95,10 +95,7 @@ describe("registerPasskey", () => {
     };
   };
 
-  const buildLoginRequest = (
-      address: string,
-      challenge: string,
-  ) => {
+  const buildLoginRequest = (address: string, challenge: string) => {
     const {clientDataJson, authData, signature} = signLoginRequest(
         address,
         ORIGIN,
@@ -135,6 +132,29 @@ describe("registerPasskey", () => {
     };
   };
 
+  test("username validation", () => {
+    const validateHexlinkError = (
+        name: string,
+        code: number,
+        message: string
+    ) => {
+      try {
+        genNameHash(name);
+      } catch (e) {
+        expect(e).toBeInstanceOf(HexlinkError);
+        expect((e as HexlinkError).code).toEqual(code);
+        expect((e as HexlinkError).message).toEqual(message);
+      }
+    };
+
+    validateHexlinkError("peter", 400, utils.INVALID_USER_NAME_NON_MIZU_NAME);
+    validateHexlinkError("some.mizu", 400, utils.INVALID_USER_NAME_TOO_SHORT);
+    validateHexlinkError(".mizu", 400, utils.INVALID_USER_NAME_TOO_SHORT);
+    validateHexlinkError("sub.peter.mizu", 400, utils.SUBDOMAIN_NOT_ALLOWED);
+    validateHexlinkError("sub_peter.mizu", 400, utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS);
+    expect(genNameHash("peter.mizu")).toEqual(genNameHash(" PETER.MIZU "));
+  });
+
   test("it should register a new user with passkey", (done: any) => {
     const username = "peter.mizu";
     const jsonValidator = (response: any) => {
@@ -147,44 +167,6 @@ describe("registerPasskey", () => {
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
-  test("it should throw with too short username", (done: any) => {
-    const username = "some.mizu";
-    const jsonValidator = (response: any) => {
-      expect(response).toHaveProperty("message");
-      expect(response.message).toEqual(utils.INVALID_USER_NAME_TOO_SHORT);
-      done();
-    };
-    const req = buildRegisterRequest(username);
-    const res = buildResponse(400, jsonValidator);
-    auth.registerUserWithPasskey(req as any, res as any);
-  });
-
-  test("it should throw with disallowed characters", (done: any) => {
-    const username = "some_user.mizu";
-    const jsonValidator = (response: any) => {
-      expect(response).toHaveProperty("message");
-      expect(response.message).toEqual(
-          utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS
-      );
-      done();
-    };
-    const req = buildRegisterRequest(username);
-    const res = buildResponse(400, jsonValidator);
-    auth.registerUserWithPasskey(req as any, res as any);
-  });
-
-  test("it should throw with empty label", (done: any) => {
-    const username = "SOME..user.mizu";
-    const jsonValidator = (response: any) => {
-      expect(response).toHaveProperty("message");
-      expect(response.message).toEqual(utils.INVALID_USER_NAME_EMTPY_LABEL);
-      done();
-    };
-    const req = buildRegisterRequest(username);
-    const res = buildResponse(400, jsonValidator);
-    auth.registerUserWithPasskey(req as any, res as any);
-  });
-
   test("it should throw if user already exists", (done: any) => {
     jest.spyOn(adb, "registerUser").mockImplementation(() => {
       throw new HexlinkError(400, "name already taken");
@@ -194,13 +176,13 @@ describe("registerPasskey", () => {
       expect(response.message).toEqual("name already taken");
       done();
     };
-    const req = buildRegisterRequest("some.USER.mizu");
+    const req = buildRegisterRequest("peter.mizu");
     const res = buildResponse(400, jsonValidator);
     auth.registerUserWithPasskey(req as any, res as any);
   });
 
   test("the user should login with challenge", async () => {
-    const username = "some.user.mizu";
+    const username = "peter.mizu";
     const userId = utils.genNameHash(username);
     const authDb: adb.Auth = {
       passkey: passkey.pubKey,
@@ -221,7 +203,9 @@ describe("registerPasskey", () => {
           authDb.csrfToken = csrfToken;
           return Promise.resolve();
         });
-    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
+    jest
+        .spyOn(adb, "getAuth")
+        .mockImplementation(() => Promise.resolve(authDb));
     const req = {
       headers: {origin: true},
       body: {uid: userId},
@@ -236,10 +220,7 @@ describe("registerPasskey", () => {
     await auth.getPasskeyChallenge(req as any, res as any);
     await firstDone;
 
-    const loginReq = buildLoginRequest(
-        account,
-        authDb.challenge!,
-    );
+    const loginReq = buildLoginRequest(account, authDb.challenge!);
     const secondDone = Promise.resolve();
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
@@ -260,7 +241,9 @@ describe("registerPasskey", () => {
       updatedAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
+    jest
+        .spyOn(adb, "getAuth")
+        .mockImplementation(() => Promise.resolve(authDb));
 
     jest
         .spyOn(adb, "postAuth")
@@ -292,10 +275,7 @@ describe("registerPasskey", () => {
     await secondDone;
 
     // valid client data but invalid signature
-    const validLoginReq = buildLoginRequest(
-        account,
-        challenge,
-    );
+    const validLoginReq = buildLoginRequest(account, challenge);
     invalidLoginReq.body.clientDataJson = validLoginReq.body.clientDataJson;
     const loginRes3 = buildResponse(400, (response: any) => {
       expect(response.message).toEqual("invalid signature");
