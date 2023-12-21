@@ -15,135 +15,17 @@ import {
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {
-  checkNameRateLimit,
   getChallengeRateLimit,
   registerRateLimit,
 } from "./ratelimiter";
-import {getUser, postAuth, preAuth, registerUser, resolveName} from "./db";
-import {getAccountAddress} from "./account";
+import {registerUser, getAuth, postAuth, preAuth} from "./db/auth";
 
 const secrets = functions.config().doppler || {};
 
 /**
  * req.body: {
- *   uid: string,
- * }
- *
- * res: {
- *   registered: boolean,
- *   address?: string, // only valid if registered is true
- */
-
-export const getAddressByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
-      }
-      const address = await resolveName(req.body.uid);
-      if (!address) {
-        res.status(200).json({registered: false});
-      } else {
-        res.status(200).json({registered: true, address});
-      }
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
-  });
-});
-
-/**
- * req.body: {
- *   uid: string,
- * }
- *
- * res: {
- *   registered: boolean,
- *   user?: { // only valid if registered is true
- *     address: string,
- *     operator: string,
- *     metadata: string,
- *     passkey: Passkey,
- *     name?: string,
- *   }
- */
-export const getUserByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
-      }
-      const address = await resolveName(req.body.uid);
-      if (!address) {
-        res.status(200).json({registered: false});
-      } else {
-        const user = await getUser(address);
-        if (user) {
-          res.status(200).json({
-            registered: true,
-            user: {
-              address,
-              passkey: user.passkey,
-              operator: user.operator,
-              metadata: user.metadata,
-              name: user.name,
-            },
-          });
-        } else {
-          throw new HexlinkError(500, "user data lost");
-        }
-      }
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
-  });
-});
-
-/**
- * req.body: {
- *   address: string,
- * }
- *
- * res: {
- *   registered: boolean,
- *   user?: { // only valid if registered is true
- *     address: string,
- *     operator: string,
- *     metadata: string,
- *     passkey: Passkey,
- *     name?: string,
- *   }
- */
-export const getUserByAddress = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
-      }
-      const user = await getUser(req.body.address);
-      if (user) {
-        res.status(200).json({
-          registered: true,
-          user: {
-            address: req.body.address,
-            passkey: user.passkey,
-            operator: user.operator,
-            metadata: user.metadata,
-            name: user.name,
-          },
-        });
-      } else {
-        throw new HexlinkError(404, "user not found");
-      }
-    } catch (err: unknown) {
-      handleError(res, err);
-    }
-  });
-});
-
-/**
- * req.body: {
  *  username: string,
+ *  address: string,
  *  operator: string,
  *  metadata: string,
  *  passkey: {
@@ -158,7 +40,6 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
  * }
  *
  * res: {
- *   address: string,
  *   token: string,
  *   csrfToken: string,
  *   dek: string,
@@ -170,18 +51,18 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
         throw new HexlinkError(429, "Too many requests");
       }
+      if (!ethers.isAddress(req.body.address)) {
+        throw new HexlinkError(400, "invalid address");
+      }
+      const address = ethers.getAddress(req.body.address);
       const nameHash = genNameHash(req.body.username);
-      const address = getAccountAddress(
-          req.body.passkey,
-          req.body.operator,
-          req.body.metadata
-      );
       const challenge = crypto
           .createHash("sha256")
           .update(
               Buffer.concat([
                 Buffer.from("register", "utf-8"), // action
-                Buffer.from(req.body.username, "utf-8"), // username
+                Buffer.from(req.body.nameHash, "hex"), // uid
+                Buffer.from(req.body.address, "hex"), // address
                 Buffer.from(req.body.operator, "hex"), // operator
                 Buffer.from(req.body.metadata, "hex"), // metadata
                 Buffer.from(req.body.dek, "hex"), // dek
@@ -213,7 +94,6 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         createNewUser(address),
       ]);
       res.status(200).json({
-        address,
         token: token,
         csrfToken,
         dek,
@@ -247,15 +127,12 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
       ) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const user = await getUser(req.body.address);
-      if (user == null) {
+      const auth = await getAuth(req.body.address);
+      if (auth == null) {
         throw new HexlinkError(404, "User not found");
       }
-      if (
-        user.loginStatus.challenge.length > 0 &&
-        user.loginStatus.updatedAt.seconds + 180 > epoch()
-      ) {
-        res.status(200).json({challenge: user.loginStatus.challenge});
+      if (auth.challenge && auth.updatedAt.seconds + 180 > epoch()) {
+        res.status(200).json({challenge: auth.challenge});
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
         await preAuth(req.body.address, challenge);
@@ -287,14 +164,11 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
   cors({origin: true, credentials: true})(req, res, async () => {
     try {
-      const user = await getUser(req.body.address);
-      if (user == null) {
-        throw new HexlinkError(404, "User not found");
+      const auth = await getAuth(req.body.address);
+      if (!auth?.challenge) {
+        throw new HexlinkError(404, "User not found or challenge not set");
       }
-      if (
-        user.loginStatus.challenge.length > 0 &&
-        user.loginStatus.updatedAt.seconds + 180 < epoch()
-      ) {
+      if (auth.updatedAt.seconds + 180 < epoch()) {
         throw new HexlinkError(403, "invalid challenge");
       }
       const challenge = crypto
@@ -303,7 +177,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
               Buffer.concat([
                 Buffer.from("login", "utf-8"), // action
                 Buffer.from(req.body.address, "hex"), // address
-                Buffer.from(user.loginStatus.challenge, "hex"), // challenge
+                Buffer.from(auth.challenge, "hex"), // challenge
                 Buffer.from(req.body.dek ?? "", "utf-8"), // encrypted dek
                 Buffer.from(req.body.newDek ?? ethers.ZeroHash, "hex"), // new dek
               ])
@@ -317,7 +191,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           ],
           req.body.authData,
           req.body.signature,
-          user.passkey
+          auth.passkey
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
       const aad = toBuffer(req.body.address);
@@ -355,9 +229,9 @@ export const sessionLogin = functions.https.onRequest((req, res) => {
       const idToken = req.body.idToken;
       const csrfToken = req.body.csrfToken;
       const decoded = await admin.auth().verifyIdToken(idToken);
-      const user = await getUser(decoded.uid);
+      const auth = await getAuth(decoded.uid);
       // Guard against CSRF attacks.
-      if (csrfToken !== user?.csrfToken) {
+      if (csrfToken !== auth?.csrfToken) {
         throw new HexlinkError(401, "UNAUTHORIZED REQUEST");
       }
       // Only process if the user just signed in in the last 5 minutes.
@@ -400,8 +274,8 @@ export const getDeks = functions.https.onRequest((req, res) => {
   cors({origin: true, credentials: true})(req, res, async () => {
     try {
       const claims = await verifySessionCookie(req);
-      const user = await getUser(claims.uid);
-      if (!user || req.body.csrfToken != user?.csrfToken) {
+      const auth = await getAuth(claims.uid);
+      if (!auth || req.body.csrfToken != auth?.csrfToken) {
         throw new HexlinkError(401, "Access denied");
       }
       const aad = toBuffer(claims.uid);

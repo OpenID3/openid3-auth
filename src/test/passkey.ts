@@ -2,7 +2,8 @@ import {secp256r1} from "@noble/curves/p256";
 import {PrivateKey} from "eciesjs";
 import crypto from "crypto";
 import {ethers} from "ethers";
-import {Passkey} from "../db";
+import {genNameHash} from "../utils";
+import {Passkey} from "../db/utils";
 
 export interface Key {
     privKey: Uint8Array | Buffer,
@@ -54,16 +55,19 @@ export const signWithPasskey = (
 
 export const signRegisterRequest = (
     username: string,
+    address: string,
     origin: string,
     passkey: any,
     operator: string,
     metadata: string,
     dek: string,
 ) => {
+  const uid = genNameHash(username);
   const challenge = crypto.createHash("sha256").update(
       Buffer.concat([
         Buffer.from("register", "utf-8"), // action
-        Buffer.from(username, "utf-8"), // username
+        Buffer.from(uid, "hex"), // username
+        Buffer.from(address, "hex"), // address
         Buffer.from(operator, "hex"), // operator
         Buffer.from(metadata, "hex"), // metadata
         Buffer.from(dek, "hex"), // salt

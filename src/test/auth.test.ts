@@ -37,16 +37,15 @@ jest.mock("firebase-admin", () => {
 // import after testEnv is setup and properly mocked
 // otherwise the env won't inject into the functions
 import * as auth from "../auth";
-import * as db from "../db";
+import * as adb from "../db/auth";
 import * as utils from "../utils";
 import {Timestamp} from "@google-cloud/firestore";
 import {encryptWithSymmKey} from "../gcloudKms";
 import {ethers} from "ethers";
-import {getAccountAddress} from "../account";
 import {HexlinkError} from "../utils";
 
-jest.spyOn(db, "getUser").mockImplementation(() => Promise.resolve(null));
-jest.spyOn(db, "registerUser").mockImplementation(() => Promise.resolve());
+jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(null));
+jest.spyOn(adb, "registerUser").mockImplementation(() => Promise.resolve());
 
 describe("registerPasskey", () => {
   let passkey: Key;
@@ -55,7 +54,7 @@ describe("registerPasskey", () => {
   const metadata: string = ethers.ZeroHash.slice(2);
   const dek = crypto.randomBytes(32).toString("hex");
   const newDek = crypto.randomBytes(32).toString("hex");
-  let account: string;
+  const account: string = "0x" + crypto.randomBytes(20).toString("hex");
   let encryptedDek: string;
   let encryptedNewDek: string;
 
@@ -65,11 +64,6 @@ describe("registerPasskey", () => {
     pkId = "passkey1";
     passkey = genPasskey(pkId);
     operator = ethers.Wallet.createRandom();
-    account = getAccountAddress(
-        passkey.pubKey,
-        operator.address,
-        metadata
-    );
     const aad = utils.toBuffer(account);
     encryptedDek = await encryptWithSymmKey(dek, aad) as string;
     encryptedNewDek = await encryptWithSymmKey(newDek, aad) as string;
@@ -78,6 +72,7 @@ describe("registerPasskey", () => {
   const buildRegisterRequest = (username: string) => {
     const {clientDataJson, authData, signature} = signRegisterRequest(
         username,
+        account,
         ORIGIN,
         passkey,
         operator.address,
@@ -190,7 +185,7 @@ describe("registerPasskey", () => {
   });
 
   test("it should throw if user already exists", (done: any) => {
-    jest.spyOn(db, "registerUser").mockImplementation(() => {
+    jest.spyOn(adb, "registerUser").mockImplementation(() => {
       throw new HexlinkError(400, "name already taken");
     });
     const jsonValidator = (response: any) => {
@@ -206,34 +201,26 @@ describe("registerPasskey", () => {
   test("the user should login with challenge", async () => {
     const username = "some.user.mizu";
     const userId = utils.genNameHash(username);
-    const userDb: db.User = {
+    const authDb: adb.Auth = {
       passkey: passkey.pubKey,
-      operator: operator.address,
-      metadata,
-      loginStatus: {
-        challenge: "",
-        updatedAt: new Timestamp(utils.epoch(), 0),
-      },
-      createdAt: new Timestamp(utils.epoch(), 0),
+      challenge: "",
+      updatedAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
-
     jest
-        .spyOn(db, "preAuth")
+        .spyOn(adb, "preAuth")
         .mockImplementation((_uid: string, challenge: string) => {
-          userDb.loginStatus = {
-            challenge,
-            updatedAt: new Timestamp(utils.epoch(), 0),
-          };
+          authDb.challenge = challenge;
+          authDb.updatedAt = new Timestamp(utils.epoch(), 0);
           return Promise.resolve();
         });
     jest
-        .spyOn(db, "postAuth")
+        .spyOn(adb, "postAuth")
         .mockImplementation((_uid: string, csrfToken: string) => {
-          userDb.csrfToken = csrfToken;
+          authDb.csrfToken = csrfToken;
           return Promise.resolve();
         });
-    jest.spyOn(db, "getUser").mockImplementation(() => Promise.resolve(userDb));
+    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
     const req = {
       headers: {origin: true},
       body: {uid: userId},
@@ -241,7 +228,7 @@ describe("registerPasskey", () => {
     const firstDone = Promise.resolve();
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("challenge");
-      expect(response.challenge).toEqual(userDb.loginStatus.challenge);
+      expect(response.challenge).toEqual(authDb.challenge);
       firstDone;
     };
     const res = buildResponse(200, jsonValidator);
@@ -250,12 +237,12 @@ describe("registerPasskey", () => {
 
     const loginReq = buildLoginRequest(
         account,
-        userDb.loginStatus.challenge,
+        authDb.challenge!,
     );
     const secondDone = Promise.resolve();
     const loginRes = buildResponse(200, (response: any) => {
       expect(response).toHaveProperty("token");
-      expect(userDb.csrfToken).toEqual(response.csrfToken);
+      expect(authDb.csrfToken).toEqual(response.csrfToken);
       expect(dek).toEqual(response.dek);
       expect(encryptedNewDek).toEqual(response.newDek);
       secondDone;
@@ -266,24 +253,19 @@ describe("registerPasskey", () => {
 
   test("it should throw if challenge or origin does not match", async () => {
     const challenge = utils.sha256("valid_challenge").toString("hex");
-    const userDb: db.User = {
+    const authDb: adb.Auth = {
       passkey: passkey.pubKey,
-      operator: operator.address,
-      metadata,
-      loginStatus: {
-        challenge,
-        updatedAt: new Timestamp(utils.epoch(), 0),
-      },
-      createdAt: new Timestamp(utils.epoch(), 0),
+      challenge: "",
+      updatedAt: new Timestamp(utils.epoch(), 0),
       csrfToken: "",
     };
     jest
-        .spyOn(db, "postAuth")
+        .spyOn(adb, "postAuth")
         .mockImplementation((_uid: string, csrfToken: string) => {
-          userDb.csrfToken = csrfToken;
+          authDb.csrfToken = csrfToken;
           return Promise.resolve();
         });
-    jest.spyOn(db, "getUser").mockImplementation(() => Promise.resolve(userDb));
+    jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(authDb));
     const invalidChallenge = utils.sha256("invalid_challenge").toString("hex");
     const invalidLoginReq = buildLoginRequest(
         account,

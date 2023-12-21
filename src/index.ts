@@ -4,9 +4,6 @@ admin.initializeApp();
 import * as auth from "./auth";
 import * as zkp from "./zkp";
 
-exports.getAddressByUid = auth.getAddressByUid;
-exports.getUserByUid = auth.getUserByUid;
-exports.getUserByAddress = auth.getUserByAddress;
 exports.registerUserWithPasskey = auth.registerUserWithPasskey;
 exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
