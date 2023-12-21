@@ -26,6 +26,7 @@ const secrets = functions.config().doppler || {};
  * req.body: {
  *  username: string,
  *  address: string,
+ *  factory: string,
  *  operator: string,
  *  metadata: string,
  *  passkey: {
@@ -63,6 +64,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
                 Buffer.from("register", "utf-8"), // action
                 toBuffer(nameHash), // uid
                 toBuffer(address), // address
+                toBuffer(req.body.factory), // factory
                 toBuffer(req.body.operator), // operator
                 toBuffer(req.body.metadata), // metadata
                 toBuffer(req.body.dek), // dek
@@ -85,6 +87,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
             nameHash,
             address,
             req.body.passkey,
+            req.body.factory,
             req.body.operator,
             req.body.metadata,
             csrfToken,

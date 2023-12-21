@@ -57,6 +57,7 @@ export const signRegisterRequest = (
     username: string,
     address: string,
     origin: string,
+    factory: string,
     passkey: any,
     operator: string,
     metadata: string,
@@ -68,6 +69,7 @@ export const signRegisterRequest = (
         Buffer.from("register", "utf-8"), // action
         toBuffer(uid), // username
         toBuffer(address), // address
+        toBuffer(factory), // factory
         toBuffer(operator), // operator
         toBuffer(metadata), // metadata
         toBuffer(dek), // dek

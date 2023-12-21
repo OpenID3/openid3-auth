@@ -42,6 +42,7 @@ export async function registerUser(
     uid: string,
     address: string,
     passkey: Passkey,
+    factory: string,
     operator: string,
     metadata: string,
     name: string,
@@ -59,6 +60,7 @@ export async function registerUser(
     t.set(nsRef, {address});
     t.set(userRef, {
       passkey,
+      factory,
       operator,
       metadata,
       name,

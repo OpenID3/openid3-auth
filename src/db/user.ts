@@ -4,6 +4,7 @@ import {Passkey, firestore} from "./utils";
 // use address as key for user
 export interface User {
   passkey: Passkey;
+  factory: string; // factory address
   operator: string; // operator address
   metadata: string; // metadata for user
   name?: string;

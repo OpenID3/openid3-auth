@@ -11,6 +11,8 @@ import crypto from "crypto";
 
 const testEnv = ftest();
 const ORIGIN = "https://localhost:3000";
+const CONTRACT_V0_0_8_ACCOUNT_FACTORY =
+  "0xa5727531591A3dE7ADaC6b3759bEF5BD5549c121";
 testEnv.mockConfig({
   doppler: {
     ENV: "dev",
@@ -18,8 +20,7 @@ testEnv.mockConfig({
     DEV_KEY_IV: crypto.randomBytes(16).toString("hex"),
     ORIGIN,
     CONTRACT_V0_0_8_ACCOUNT_PROXY: "0x7CB55518ad352E220882935E419F7Fd3cA68B21A",
-    CONTRACT_V0_0_8_ACCOUNT_FACTORY:
-      "0xa5727531591A3dE7ADaC6b3759bEF5BD5549c121",
+    CONTRACT_V0_0_8_ACCOUNT_FACTORY,
     CONTRACT_V0_0_8_PASSSKEY_ADMIN:
       "0x3dAdb4660d8e99B839d1eB6cAb6bB2Fd0414DcF1",
   },
@@ -54,6 +55,7 @@ describe("registerPasskey", () => {
   const metadata: string = ethers.ZeroHash.slice(2);
   const dek = crypto.randomBytes(32).toString("hex");
   const newDek = crypto.randomBytes(32).toString("hex");
+  const factory = CONTRACT_V0_0_8_ACCOUNT_FACTORY;
   const account: string = "0x" + crypto.randomBytes(20).toString("hex");
   let encDek: string;
   let encNewDek: string;
@@ -74,6 +76,7 @@ describe("registerPasskey", () => {
         username,
         account,
         ORIGIN,
+        factory,
         passkey,
         operator.address,
         metadata,
@@ -85,6 +88,7 @@ describe("registerPasskey", () => {
         username,
         address: account,
         passkey: passkey.pubKey,
+        factory,
         operator: operator.address,
         clientDataJson,
         authData,
@@ -151,7 +155,11 @@ describe("registerPasskey", () => {
     validateHexlinkError("some.mizu", 400, utils.INVALID_USER_NAME_TOO_SHORT);
     validateHexlinkError(".mizu", 400, utils.INVALID_USER_NAME_TOO_SHORT);
     validateHexlinkError("sub.peter.mizu", 400, utils.SUBDOMAIN_NOT_ALLOWED);
-    validateHexlinkError("sub_peter.mizu", 400, utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS);
+    validateHexlinkError(
+        "sub_peter.mizu",
+        400,
+        utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS
+    );
     expect(genNameHash("peter.mizu")).toEqual(genNameHash(" PETER.MIZU "));
   });
 
