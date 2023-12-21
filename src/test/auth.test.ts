@@ -55,8 +55,8 @@ describe("registerPasskey", () => {
   const dek = crypto.randomBytes(32).toString("hex");
   const newDek = crypto.randomBytes(32).toString("hex");
   const account: string = "0x" + crypto.randomBytes(20).toString("hex");
-  let encryptedDek: string;
-  let encryptedNewDek: string;
+  let encDek: string;
+  let encNewDek: string;
 
   beforeAll(async () => {
     jest.clearAllMocks();
@@ -65,8 +65,8 @@ describe("registerPasskey", () => {
     passkey = genPasskey(pkId);
     operator = ethers.Wallet.createRandom();
     const aad = utils.toBuffer(account);
-    encryptedDek = (await encryptWithSymmKey(dek, aad)) as string;
-    encryptedNewDek = (await encryptWithSymmKey(newDek, aad)) as string;
+    encDek = (await encryptWithSymmKey(dek, aad)) as string;
+    encNewDek = (await encryptWithSymmKey(newDek, aad)) as string;
   });
 
   const buildRegisterRequest = (username: string) => {
@@ -101,7 +101,7 @@ describe("registerPasskey", () => {
         ORIGIN,
         challenge,
         passkey,
-        encryptedDek,
+        encDek,
         newDek
     );
     return {
@@ -111,7 +111,7 @@ describe("registerPasskey", () => {
         clientDataJson,
         authData,
         signature: signature.toCompactHex(),
-        dek: encryptedDek,
+        encDek,
         newDek,
       },
     };
@@ -159,7 +159,7 @@ describe("registerPasskey", () => {
     const username = "peter.mizu";
     const jsonValidator = (response: any) => {
       expect(response).toHaveProperty("token");
-      expect(encryptedDek).toEqual(response.dek);
+      expect(encDek).toEqual(response.encDek);
       done();
     };
     const req = buildRegisterRequest(username);
@@ -226,7 +226,7 @@ describe("registerPasskey", () => {
       expect(response).toHaveProperty("token");
       expect(authDb.csrfToken).toEqual(response.csrfToken);
       expect(dek).toEqual(response.dek);
-      expect(encryptedNewDek).toEqual(response.newDek);
+      expect(encNewDek).toEqual(response.encNewDek);
       secondDone;
     });
     await auth.loginWithPasskey(loginReq as any, loginRes as any);

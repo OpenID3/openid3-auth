@@ -42,7 +42,7 @@ const secrets = functions.config().doppler || {};
  * res: {
  *   token: string,
  *   csrfToken: string,
- *   dek: string,
+ *   encDek: string,
  * }
  */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
@@ -80,7 +80,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.passkey
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
-      const [, dek, token] = await Promise.all([
+      const [, encDek, token] = await Promise.all([
         registerUser(
             nameHash,
             address,
@@ -96,7 +96,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       res.status(200).json({
         token: token,
         csrfToken,
-        dek,
+        encDek,
       });
     } catch (err: unknown) {
       handleError(res, err);
@@ -150,7 +150,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *   clientDataJson: string,
  *   authData: string, // hex
  *   signature: string, // hex
- *   dek?: string, // to decrypt
+ *   encDek?: string, // to decrypt
  *   newDek?: string, // to encrypt
  * }
  *
@@ -158,7 +158,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  *   token: string,
  *   csrfToken: string,
  *   dek?: string, // decrypted
- *   newDek?: string, // encrypted
+ *   encNewDek?: string, // encrypted
  * }
  */
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
@@ -178,7 +178,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
                 Buffer.from("login", "utf-8"), // action
                 toBuffer(req.body.address), // address
                 toBuffer(auth.challenge), // challenge
-                Buffer.from(req.body.dek ?? "", "utf-8"), // encrypted dek
+                Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
                 toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
               ])
           )
@@ -196,13 +196,13 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
       const csrfToken = crypto.randomBytes(32).toString("hex");
       const aad = toBuffer(req.body.address);
       console.log("aad: ", req.body.address);
-      const [, token, dek, newDek] = await Promise.all([
+      const [, token, dek, encNewDek] = await Promise.all([
         postAuth(req.body.address, csrfToken),
         admin.auth().createCustomToken(req.body.address),
-        decryptWithSymmKey(req.body.dek, aad),
+        decryptWithSymmKey(req.body.encDek, aad),
         encryptWithSymmKey(req.body.newDek, aad),
       ]);
-      res.status(200).json({token, csrfToken, dek, newDek});
+      res.status(200).json({token, csrfToken, dek, encNewDek});
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -260,14 +260,14 @@ export const sessionLogin = functions.https.onRequest((req, res) => {
 
 /**
  * req.body: {
- *   dek: string, // to decrypt
+ *   encDek: string, // to decrypt
  *   newDek?: string, // to encrypt
  *   csrfToken: string,
  * }
  *
  * res: {
  *   dek: string, // decrypted
- *   newDek?: string, // encrypted
+ *   encNewDek?: string, // encrypted
  * }
  */
 export const getDeks = functions.https.onRequest((req, res) => {
@@ -279,11 +279,11 @@ export const getDeks = functions.https.onRequest((req, res) => {
         throw new HexlinkError(401, "Access denied");
       }
       const aad = toBuffer(claims.uid);
-      const [dek, newDek] = await Promise.all([
-        decryptWithSymmKey(req.body.dek, aad),
+      const [dek, encNewDek] = await Promise.all([
+        decryptWithSymmKey(req.body.encDek, aad),
         encryptWithSymmKey(req.body.newDek, aad),
       ]);
-      res.status(200).json({dek, newDek});
+      res.status(200).json({dek, encNewDek});
     } catch (err: unknown) {
       handleError(res, err);
     }
