@@ -4,7 +4,7 @@ import {HexlinkError, epoch} from "../utils";
 
 export interface Auth {
   passkey: Passkey;
-  challenge?: string;
+  challenge: string | null;
   csrfToken: string;
   updatedAt: Timestamp;
 }
@@ -32,7 +32,7 @@ export async function postAuth(address: string, csrfToken: string) {
       .collection("auth")
       .doc(address)
       .update({
-        challenge: undefined,
+        challenge: null,
         updatedAt: new Timestamp(epoch(), 0),
         csrfToken,
       });
