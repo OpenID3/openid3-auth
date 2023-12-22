@@ -5,7 +5,7 @@ import axios from "axios";
 import * as jose from "jose";
 
 import {HexlinkError, handleError, sha256} from "./utils";
-import {addNewZkpRequest, addZkProof, getZkp, markZkProofError} from "./db";
+import {addNewZkpRequest, addZkProof, getZkp, markZkProofError} from "./db/zkp";
 import {defineSecret} from "firebase-functions/params";
 import {
   JwtInput,
