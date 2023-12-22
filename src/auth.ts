@@ -14,18 +14,15 @@ import {
   toBuffer,
 } from "./utils";
 import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
-import {
-  getChallengeRateLimit,
-  registerRateLimit,
-} from "./ratelimiter";
+import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
 import {registerUser, getAuth, postAuth, preAuth} from "./db/auth";
+import {getAccountAddress} from "./account";
 
 const secrets = functions.config().doppler || {};
 
 /**
  * req.body: {
  *  username: string,
- *  address: string,
  *  factory: string,
  *  operator: string,
  *  metadata: string,
@@ -52,10 +49,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
         throw new HexlinkError(429, "Too many requests");
       }
-      if (!ethers.isAddress(req.body.address)) {
-        throw new HexlinkError(400, "invalid address");
-      }
-      const address = ethers.getAddress(req.body.address);
+      const address = await getAccountAddress(req.body);
       const nameHash = genNameHash(req.body.username);
       const challenge = crypto
           .createHash("sha256")
@@ -63,7 +57,6 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
               Buffer.concat([
                 Buffer.from("register", "utf-8"), // action
                 toBuffer(nameHash), // uid
-                toBuffer(address), // address
                 toBuffer(req.body.factory), // factory
                 toBuffer(req.body.operator), // operator
                 toBuffer(req.body.metadata), // metadata
@@ -90,7 +83,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
             req.body.factory,
             req.body.operator,
             req.body.metadata,
-            csrfToken,
+            csrfToken
         ),
         encryptWithSymmKey(req.body.dek, toBuffer(address)),
         createNewUser(address),

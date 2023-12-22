@@ -40,11 +40,15 @@ jest.mock("firebase-admin", () => {
 import * as auth from "../auth";
 import * as adb from "../db/auth";
 import * as utils from "../utils";
+import * as acc from "../account";
 import {Timestamp} from "@google-cloud/firestore";
 import {encryptWithSymmKey} from "../gcloudKms";
 import {ethers} from "ethers";
 import {HexlinkError, genNameHash} from "../utils";
 
+const account: string = "0x" + crypto.randomBytes(20).toString("hex");
+jest.spyOn(acc, "getAccountAddress").mockImplementation(
+    () => Promise.resolve(account));
 jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(null));
 jest.spyOn(adb, "registerUser").mockImplementation(() => Promise.resolve());
 
@@ -56,7 +60,6 @@ describe("registerPasskey", () => {
   const dek = crypto.randomBytes(32).toString("hex");
   const newDek = crypto.randomBytes(32).toString("hex");
   const factory = CONTRACT_V0_0_8_ACCOUNT_FACTORY;
-  const account: string = "0x" + crypto.randomBytes(20).toString("hex");
   let encDek: string;
   let encNewDek: string;
 
@@ -74,7 +77,6 @@ describe("registerPasskey", () => {
   const buildRegisterRequest = (username: string) => {
     const {clientDataJson, authData, signature} = signRegisterRequest(
         username,
-        account,
         ORIGIN,
         factory,
         passkey,
@@ -86,9 +88,8 @@ describe("registerPasskey", () => {
       headers: {origin: true},
       body: {
         username,
-        address: account,
-        passkey: passkey.pubKey,
         factory,
+        passkey: passkey.pubKey,
         operator: operator.address,
         clientDataJson,
         authData,
