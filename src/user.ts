@@ -48,10 +48,10 @@ export const getAddressByUid = functions.https.onRequest((req, res) => {
  *   registered: boolean,
  *   user?: { // only valid if registered is true
  *     address: string,
+ *     factory: string,
  *     operator: string,
  *     metadata: string,
  *     passkey: Passkey,
- *     name?: string,
  *   }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
@@ -70,10 +70,10 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
             registered: true,
             user: {
               address,
+              factory: user.factory,
               passkey: user.passkey,
               operator: user.operator,
               metadata: user.metadata,
-              name: user.name,
             },
           });
         } else {
@@ -95,10 +95,10 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  *   registered: boolean,
  *   user?: { // only valid if registered is true
  *     address: string,
+ *     factory: string,
  *     operator: string,
  *     metadata: string,
  *     passkey: Passkey,
- *     name?: string,
  *   }
  */
 export const getUserByAddress = functions.https.onRequest((req, res) => {
@@ -113,10 +113,10 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
           registered: true,
           user: {
             address: req.body.address,
+            factory: user.factory,
             passkey: user.passkey,
             operator: user.operator,
             metadata: user.metadata,
-            name: user.name,
           },
         });
       } else {
