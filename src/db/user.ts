@@ -7,7 +7,6 @@ export interface User {
   factory: string; // factory address
   operator: string; // operator address
   metadata: string; // metadata for user
-  name?: string;
   createdAt: Timestamp;
 }
 

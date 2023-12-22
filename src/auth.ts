@@ -91,7 +91,6 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
             req.body.operator,
             req.body.metadata,
             csrfToken,
-            req.body.username
         ),
         encryptWithSymmKey(req.body.dek, toBuffer(address)),
         createNewUser(address),

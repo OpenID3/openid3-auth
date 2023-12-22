@@ -45,7 +45,6 @@ export async function registerUser(
     factory: string,
     operator: string,
     metadata: string,
-    name: string,
     csrfToken: string,
 ) {
   const db = firestore();
@@ -63,7 +62,6 @@ export async function registerUser(
       factory,
       operator,
       metadata,
-      name,
       createdAt: new Timestamp(epoch(), 0),
     });
     t.set(authRef, {
