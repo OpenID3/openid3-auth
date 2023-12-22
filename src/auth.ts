@@ -39,6 +39,7 @@ const secrets = functions.config().doppler || {};
  *
  * res: {
  *   token: string,
+ *   address: string,
  *   csrfToken: string,
  *   encDek: string,
  * }
@@ -89,7 +90,8 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         createNewUser(address),
       ]);
       res.status(200).json({
-        token: token,
+        token,
+        address,
         csrfToken,
         encDek,
       });
@@ -190,7 +192,6 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
       const aad = toBuffer(req.body.address);
-      console.log("aad: ", req.body.address);
       const [, token, dek, encNewDek] = await Promise.all([
         postAuth(req.body.address, csrfToken),
         admin.auth().createCustomToken(req.body.address),
