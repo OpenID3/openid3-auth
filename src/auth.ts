@@ -9,6 +9,7 @@ import * as cookie from "cookie";
 import {
   HexlinkError,
   epoch,
+  formatHex,
   genNameHash,
   handleError,
   toBuffer,
@@ -339,7 +340,7 @@ const validatePasskeySignature = (
       .digest("hex");
   const uncompressedPubKey = ethers.solidityPacked(
       ["uint8", "uint256", "uint256"],
-      [4, "0x" + pubKey.x, "0x" + pubKey.y]
+      [4, formatHex(pubKey.x), formatHex(pubKey.y)]
   );
   if (
     !secp256r1.verify(

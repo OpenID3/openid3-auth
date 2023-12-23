@@ -94,3 +94,10 @@ export const toBuffer = (data: string): Buffer => {
   data = data.startsWith("0x") ? data.slice(2) : data;
   return Buffer.from(data, "hex");
 };
+
+export const formatHex = (data: string): string => {
+  if (data.startsWith("0x")) {
+    return data;
+  }
+  return "0x" + data;
+};
