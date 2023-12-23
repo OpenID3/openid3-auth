@@ -125,7 +125,8 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
       ) {
         throw new HexlinkError(429, "Too many requests");
       }
-      const auth = await getAuth(req.body.address);
+      const address = ethers.getAddress(req.body.address);
+      const auth = await getAuth(address);
       if (auth == null) {
         throw new HexlinkError(404, "User not found");
       }
@@ -133,7 +134,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
         res.status(200).json({challenge: auth.challenge});
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
-        await preAuth(req.body.address, challenge);
+        await preAuth(address, challenge);
         res.status(200).json({challenge});
       }
     } catch (err: unknown) {
@@ -162,7 +163,8 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
   cors({origin: true, credentials: true})(req, res, async () => {
     try {
-      const auth = await getAuth(req.body.address);
+      const address = ethers.getAddress(req.body.address);
+      const auth = await getAuth(address);
       if (!auth?.challenge) {
         throw new HexlinkError(404, "User not found or challenge not set");
       }
@@ -174,7 +176,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           .update(
               Buffer.concat([
                 Buffer.from("login", "utf-8"), // action
-                toBuffer(req.body.address), // address
+                toBuffer(address), // address
                 toBuffer(auth.challenge), // challenge
                 Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
                 toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
@@ -192,10 +194,10 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           auth.passkey
       );
       const csrfToken = crypto.randomBytes(32).toString("hex");
-      const aad = toBuffer(req.body.address);
+      const aad = toBuffer(address);
       const [, token, dek, encNewDek] = await Promise.all([
-        postAuth(req.body.address, csrfToken),
-        admin.auth().createCustomToken(req.body.address),
+        postAuth(address, csrfToken),
+        admin.auth().createCustomToken(address),
         decryptWithSymmKey(req.body.encDek, aad),
         encryptWithSymmKey(req.body.newDek, aad),
       ]);
@@ -331,7 +333,7 @@ const validatePasskeySignature = (
       .update(clientDataJson)
       .digest();
   const signedData = Buffer.concat([
-    Buffer.from(authData, "hex"),
+    toBuffer(authData),
     clientDataHash,
   ]);
   const signedDataHash = crypto
@@ -344,7 +346,7 @@ const validatePasskeySignature = (
   );
   if (
     !secp256r1.verify(
-        Buffer.from(signature, "hex"),
+        toBuffer(signature),
         signedDataHash,
         uncompressedPubKey.slice(2) // remove "0x"
     )
