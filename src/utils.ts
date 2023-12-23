@@ -48,7 +48,7 @@ export const SUBDOMAIN_NOT_ALLOWED =
 
 export const genNameHash = (username: string) => {
   username = validateUsername(username);
-  return nameHash(username).slice(2); // remove 0x
+  return nameHash(username);
 };
 
 // the name is with .mizu suffix
@@ -91,8 +91,8 @@ const nameHash = (name: string): string => {
 };
 
 export const toBuffer = (data: string): Buffer => {
-  data = data.startsWith("0x") ? data.slice(2) : data;
-  return Buffer.from(data, "hex");
+  const normalized = data.startsWith("0x") ? data.slice(2) : data;
+  return Buffer.from(normalized, "hex");
 };
 
 export const formatHex = (data: string): string => {
