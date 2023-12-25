@@ -3,7 +3,6 @@ admin.initializeApp();
 
 import * as auth from "./auth";
 import * as user from "./user";
-import * as zkp from "./zkp";
 
 exports.getAddressByUid = user.getAddressByUid;
 exports.getUserByAddress = user.getUserByAddress;
@@ -14,7 +13,3 @@ exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
 exports.sessionLogin = auth.sessionLogin;
 exports.getDeks = auth.getDeks;
-
-exports.requestToReset = zkp.requestToReset;
-exports.queryResetStatus = zkp.queryResetStatus;
-exports.submitZkProof = zkp.submitZkProof;
