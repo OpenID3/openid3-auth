@@ -70,7 +70,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           req.body.clientDataJson,
           [
             ["challenge", challenge],
-            ["origin", secrets.ORIGIN],
+            ["origin", secrets.REACT_APP_ORIGIN],
           ],
           req.body.authData,
           req.body.signature,
