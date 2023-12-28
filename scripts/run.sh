@@ -8,4 +8,7 @@ pm2 start $SCRIPT_DIR/watch.sh
 
 cd $SCRIPT_DIR/../functions
 
-npm run serve
+echo "installing dependencies"
+pnpm i
+
+npm run build && npm run serve
