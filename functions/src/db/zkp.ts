@@ -1,7 +1,7 @@
-import {Timestamp} from "firebase-admin/firestore";
-import {Chain, JwtInput, OidcZkProof, UserOperationStruct} from "../userop";
-import {firestore} from "./utils";
-import {epoch} from "../utils";
+import { Timestamp } from "firebase-admin/firestore";
+import { Chain, JwtInput, OidcZkProof, UserOperationStruct } from "../userop";
+import { firestore } from "./utils";
+import { epoch } from "../utils";
 
 export interface ZKP {
   uid: string;
@@ -24,21 +24,21 @@ export async function getZkp(uid: string): Promise<ZKP | null> {
 }
 
 export async function addNewZkpRequest(
-    uid: string,
-    jwtInput: JwtInput,
-    chain: Chain,
-    userOp: UserOperationStruct
+  uid: string,
+  jwtInput: JwtInput,
+  chain: Chain,
+  userOp: UserOperationStruct
 ) {
   await firestore()
-      .collection("zkp")
-      .doc(uid)
-      .set({
-        status: "processing",
-        jwtInput,
-        chain,
-        userOp,
-        createdAt: new Timestamp(epoch(), 0),
-      });
+    .collection("zkp")
+    .doc(uid)
+    .set({
+      status: "processing",
+      jwtInput,
+      chain,
+      userOp,
+      createdAt: new Timestamp(epoch(), 0),
+    });
 }
 
 export async function addZkProof(uid: string, proof: string) {

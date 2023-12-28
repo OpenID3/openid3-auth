@@ -1,5 +1,5 @@
-import {Timestamp} from "firebase-admin/firestore";
-import {Passkey, firestore} from "./utils";
+import { Timestamp } from "firebase-admin/firestore";
+import { Passkey, firestore } from "./utils";
 
 // use address as key for user
 export interface User {

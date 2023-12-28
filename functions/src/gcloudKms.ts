@@ -15,7 +15,7 @@ const encryptorConfig = () => ({
   keyId: secrets.ENCRYPTOR_KEY_ID,
 });
 
-const getSymmKeyName = async function() {
+const getSymmKeyName = async function () {
   const config = encryptorConfig();
   return client.cryptoKeyPath(
     config.projectId,
@@ -39,7 +39,7 @@ const encryptWithDevKey = (plaintext: string, aad: Buffer) => {
 };
 
 const decryptWithDevKey = (text: string, aad: Buffer) => {
-  const {encrypted, authTag} = JSON.parse(text);
+  const { encrypted, authTag } = JSON.parse(text);
   const ciphertext = Buffer.from(encrypted, "base64");
   const key = Buffer.from(secrets.DEV_KEY, "hex");
   const iv = Buffer.from(secrets.DEV_KEY_IV, "hex");
@@ -50,7 +50,7 @@ const decryptWithDevKey = (text: string, aad: Buffer) => {
   return Buffer.concat([decrypted, decipher.final()]).toString("utf-8");
 };
 
-export const encryptWithSymmKey = async function(
+export const encryptWithSymmKey = async function (
   plaintext: string,
   aad: Buffer
 ) {
@@ -88,7 +88,7 @@ export const encryptWithSymmKey = async function(
   return Buffer.from(ciphertext).toString("base64");
 };
 
-export const decryptWithSymmKey = async function(
+export const decryptWithSymmKey = async function (
   text: string | undefined,
   aad: Buffer
 ) {
@@ -129,7 +129,7 @@ const jwtSignerConfig = () => ({
   versionId: secrets.JWT_SIGNER_KEY_VERSION_ID,
 });
 
-const getAsymmKeyName = function() {
+const getAsymmKeyName = function () {
   const config = jwtSignerConfig();
   return client.cryptoKeyVersionPath(
     config.projectId,
@@ -150,7 +150,7 @@ const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
   return sign.sign(key);
 };
 
-export const signAsymmetricRsa = async function(digestBuffer: Buffer) {
+export const signAsymmetricRsa = async function (digestBuffer: Buffer) {
   if (secrets.ENV === "dev") {
     return signAsymmetricRsaWithDevKey(digestBuffer);
   }

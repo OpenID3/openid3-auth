@@ -73,14 +73,15 @@ import * as auth from "../auth";
 import * as adb from "../db/auth";
 import * as utils from "../utils";
 import * as acc from "../account";
-import {Timestamp} from "@google-cloud/firestore";
-import {encryptWithSymmKey} from "../gcloudKms";
-import {ethers} from "ethers";
-import {ServerError, genNameHash} from "../utils";
+import { Timestamp } from "@google-cloud/firestore";
+import { encryptWithSymmKey } from "../gcloudKms";
+import { ethers } from "ethers";
+import { ServerError, genNameHash } from "../utils";
 
 const account: string = "0x" + crypto.randomBytes(20).toString("hex");
-jest.spyOn(acc, "getAccountAddress").mockImplementation(
-    () => Promise.resolve(account));
+jest
+  .spyOn(acc, "getAccountAddress")
+  .mockImplementation(() => Promise.resolve(account));
 jest.spyOn(adb, "getAuth").mockImplementation(() => Promise.resolve(null));
 jest.spyOn(adb, "registerUser").mockImplementation(() => Promise.resolve());
 
@@ -113,7 +114,7 @@ class MockedResponse {
 
   status(status: number) {
     assert.equal(status, this._status);
-    return {json: this._jsonValidator};
+    return { json: this._jsonValidator };
   }
 }
 
@@ -140,17 +141,17 @@ describe("registerPasskey", () => {
   });
 
   const buildRegisterRequest = (username: string) => {
-    const {clientDataJson, authData, signature} = signRegisterRequest(
-        username,
-        REACT_APP_ORIGIN,
-        factory,
-        passkey,
-        operator.address,
-        metadata,
-        dek
+    const { clientDataJson, authData, signature } = signRegisterRequest(
+      username,
+      REACT_APP_ORIGIN,
+      factory,
+      passkey,
+      operator.address,
+      metadata,
+      dek
     );
     return {
-      headers: {origin: true},
+      headers: { origin: true },
       body: {
         username,
         factory,
@@ -166,16 +167,16 @@ describe("registerPasskey", () => {
   };
 
   const buildLoginRequest = (address: string, challenge: string) => {
-    const {clientDataJson, authData, signature} = signLoginRequest(
-        address,
-        REACT_APP_ORIGIN,
-        challenge,
-        passkey,
-        encDek,
-        newDek
+    const { clientDataJson, authData, signature } = signLoginRequest(
+      address,
+      REACT_APP_ORIGIN,
+      challenge,
+      passkey,
+      encDek,
+      newDek
     );
     return {
-      headers: {origin: true},
+      headers: { origin: true },
       body: {
         address,
         clientDataJson,
@@ -189,9 +190,9 @@ describe("registerPasskey", () => {
 
   test("username validation", () => {
     const validateHexlinkError = (
-        name: string,
-        code: number,
-        message: string
+      name: string,
+      code: number,
+      message: string
     ) => {
       try {
         genNameHash(name);
@@ -207,9 +208,9 @@ describe("registerPasskey", () => {
     validateHexlinkError(".mizu", 400, utils.INVALID_USER_NAME_TOO_SHORT);
     validateHexlinkError("sub.peter.mizu", 400, utils.SUBDOMAIN_NOT_ALLOWED);
     validateHexlinkError(
-        "sub_peter.mizu",
-        400,
-        utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS
+      "sub_peter.mizu",
+      400,
+      utils.INVALID_USER_NAME_DISALLOWED_CHARACTERS
     );
     expect(genNameHash("peter.mizu")).toEqual(genNameHash(" PETER.MIZU "));
   });
@@ -247,24 +248,24 @@ describe("registerPasskey", () => {
       csrfToken: "",
     };
     jest
-        .spyOn(adb, "preAuth")
-        .mockImplementation((_uid: string, challenge: string) => {
-          authDb.challenge = challenge;
-          authDb.updatedAt = new Timestamp(utils.epoch(), 0);
-          return Promise.resolve();
-        });
+      .spyOn(adb, "preAuth")
+      .mockImplementation((_uid: string, challenge: string) => {
+        authDb.challenge = challenge;
+        authDb.updatedAt = new Timestamp(utils.epoch(), 0);
+        return Promise.resolve();
+      });
     jest
-        .spyOn(adb, "postAuth")
-        .mockImplementation((_uid: string, csrfToken: string) => {
-          authDb.csrfToken = csrfToken;
-          return Promise.resolve();
-        });
+      .spyOn(adb, "postAuth")
+      .mockImplementation((_uid: string, csrfToken: string) => {
+        authDb.csrfToken = csrfToken;
+        return Promise.resolve();
+      });
     jest
-        .spyOn(adb, "getAuth")
-        .mockImplementation(() => Promise.resolve(authDb));
+      .spyOn(adb, "getAuth")
+      .mockImplementation(() => Promise.resolve(authDb));
     const req = {
-      headers: {origin: true},
-      body: {address: account},
+      headers: { origin: true },
+      body: { address: account },
     };
     const firstDone = Promise.resolve();
     const jsonValidator = (response: any) => {
@@ -297,15 +298,15 @@ describe("registerPasskey", () => {
       csrfToken: "",
     };
     jest
-        .spyOn(adb, "getAuth")
-        .mockImplementation(() => Promise.resolve(authDb));
+      .spyOn(adb, "getAuth")
+      .mockImplementation(() => Promise.resolve(authDb));
 
     jest
-        .spyOn(adb, "postAuth")
-        .mockImplementation((_uid: string, csrfToken: string) => {
-          authDb.csrfToken = csrfToken;
-          return Promise.resolve();
-        });
+      .spyOn(adb, "postAuth")
+      .mockImplementation((_uid: string, csrfToken: string) => {
+        authDb.csrfToken = csrfToken;
+        return Promise.resolve();
+      });
 
     // challenge not set in server
     const loginReq1 = buildLoginRequest(account, challenge);

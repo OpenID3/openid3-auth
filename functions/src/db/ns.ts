@@ -1,4 +1,4 @@
-import {firestore} from "./utils";
+import { firestore } from "./utils";
 
 export interface NameData {
   address: string;

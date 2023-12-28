@@ -4,9 +4,14 @@ import * as admin from "firebase-admin";
 import axios from "axios";
 import * as jose from "jose";
 
-import {ServerError, handleError, sha256} from "./utils";
-import {addNewZkpRequest, addZkProof, getZkp, markZkProofError} from "./db/zkp";
-import {defineSecret} from "firebase-functions/params";
+import { ServerError, handleError, sha256 } from "./utils";
+import {
+  addNewZkpRequest,
+  addZkProof,
+  getZkp,
+  markZkProofError,
+} from "./db/zkp";
+import { defineSecret } from "firebase-functions/params";
 import {
   JwtInput,
   genUserOpHash,
@@ -52,42 +57,42 @@ const GOOGLE_JWKS = jose.createLocalJWKSet({
  * }
  */
 export const requestToReset = functions
-    .runWith({
-      secrets: [ZKP_SERVICE_SECRET],
-    })
-    .https.onRequest((req, res) => {
-      return cors({origin: true})(req, res, async () => {
-        try {
-          const firebaseIdToken = extractFirebaseIdToken(req);
-          const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
-          const jwtInput = await genJwtInput(
-              decoded.uid,
-              req.body.provider,
-              req.body.idToken
-          );
-          const zkp = await getZkp(decoded.uid);
-          if (zkp && zkp.status === "processing") {
-            throw new ServerError(400, "reset ongoing");
-          }
-          await addNewZkpRequest(
-              decoded.uid,
-              jwtInput,
-              req.body.chain,
-              req.body.userOp
-          );
-          if (!req.body.dev) {
-            await requestZkp(
-                decoded.uid,
-                req.body.idToken,
-                ZKP_SERVICE_SECRET.value()
-            );
-          }
-          res.status(200).json({status: "processing"});
-        } catch (err: unknown) {
-          handleError(res, err);
+  .runWith({
+    secrets: [ZKP_SERVICE_SECRET],
+  })
+  .https.onRequest((req, res) => {
+    return cors({ origin: true })(req, res, async () => {
+      try {
+        const firebaseIdToken = extractFirebaseIdToken(req);
+        const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
+        const jwtInput = await genJwtInput(
+          decoded.uid,
+          req.body.provider,
+          req.body.idToken
+        );
+        const zkp = await getZkp(decoded.uid);
+        if (zkp && zkp.status === "processing") {
+          throw new ServerError(400, "reset ongoing");
         }
-      });
+        await addNewZkpRequest(
+          decoded.uid,
+          jwtInput,
+          req.body.chain,
+          req.body.userOp
+        );
+        if (!req.body.dev) {
+          await requestZkp(
+            decoded.uid,
+            req.body.idToken,
+            ZKP_SERVICE_SECRET.value()
+          );
+        }
+        res.status(200).json({ status: "processing" });
+      } catch (err: unknown) {
+        handleError(res, err);
+      }
     });
+  });
 
 /**
  * req.body: {
@@ -101,7 +106,7 @@ export const requestToReset = functions
  * }
  */
 export const queryResetStatus = functions.https.onRequest((req, res) => {
-  return cors({origin: true})(req, res, async () => {
+  return cors({ origin: true })(req, res, async () => {
     try {
       const firebaseIdToken = extractFirebaseIdToken(req);
       const decoded = await admin.auth().verifyIdToken(firebaseIdToken);
@@ -111,11 +116,11 @@ export const queryResetStatus = functions.https.onRequest((req, res) => {
       }
       const userOpHash = await genUserOpHash(zkp.chain, zkp.userOp);
       if (zkp.status === "processing") {
-        res.status(200).json({status: "processing"});
+        res.status(200).json({ status: "processing" });
       } else if (zkp.status === "error") {
-        res.status(200).json({status: "error", userOpHash, error: zkp.error});
+        res.status(200).json({ status: "error", userOpHash, error: zkp.error });
       } else if (zkp.status === "done") {
-        res.status(200).json({status: "done", userOpHash});
+        res.status(200).json({ status: "done", userOpHash });
       }
     } catch (err: unknown) {
       handleError(res, err);
@@ -139,43 +144,43 @@ export const queryResetStatus = functions.https.onRequest((req, res) => {
  * This can only be called by the zkp service.
  */
 export const submitZkProof = functions
-    .runWith({
-      secrets: [ZKP_SERVICE_SECRET],
-    })
-    .https.onRequest((req, res) => {
-      return cors({origin: true})(req, res, async () => {
-        try {
-          const accessToken = extractFirebaseIdToken(req);
-          const secret = ZKP_SERVICE_SECRET.value();
-          if (secret && accessToken !== secret) {
-            throw new ServerError(401, "unauthorized");
-          }
-          const zkp = await getZkp(req.body.uid);
-          if (!zkp || zkp.status !== "processing") {
-            throw new ServerError(404, "zkp request not found");
-          }
-          if (req.body.success) {
-            if (req.body.proof == null) {
-              throw new ServerError(400, "proof is required");
-            }
-            await addZkProof(req.body.uid, req.body.proof);
-            zkp.userOp.signature = genZkAdminSignature(
-                zkp.jwtInput,
-                req.body.proof
-            );
-            await submitUserOp(zkp.chain, zkp.userOp);
-          } else {
-            await markZkProofError(
-                req.body.uid,
-                req.body.error ?? "unknown error"
-            );
-          }
-          res.status(200).json({success: true});
-        } catch (err: unknown) {
-          handleError(res, err);
+  .runWith({
+    secrets: [ZKP_SERVICE_SECRET],
+  })
+  .https.onRequest((req, res) => {
+    return cors({ origin: true })(req, res, async () => {
+      try {
+        const accessToken = extractFirebaseIdToken(req);
+        const secret = ZKP_SERVICE_SECRET.value();
+        if (secret && accessToken !== secret) {
+          throw new ServerError(401, "unauthorized");
         }
-      });
+        const zkp = await getZkp(req.body.uid);
+        if (!zkp || zkp.status !== "processing") {
+          throw new ServerError(404, "zkp request not found");
+        }
+        if (req.body.success) {
+          if (req.body.proof == null) {
+            throw new ServerError(400, "proof is required");
+          }
+          await addZkProof(req.body.uid, req.body.proof);
+          zkp.userOp.signature = genZkAdminSignature(
+            zkp.jwtInput,
+            req.body.proof
+          );
+          await submitUserOp(zkp.chain, zkp.userOp);
+        } else {
+          await markZkProofError(
+            req.body.uid,
+            req.body.error ?? "unknown error"
+          );
+        }
+        res.status(200).json({ success: true });
+      } catch (err: unknown) {
+        handleError(res, err);
+      }
     });
+  });
 
 async function validateGoogleIdToken(idToken: string, uid: string) {
   try {
@@ -191,14 +196,14 @@ async function validateGoogleIdToken(idToken: string, uid: string) {
 }
 
 async function genJwtInput(
-    uid: string,
-    provider: string,
-    idToken: string
+  uid: string,
+  provider: string,
+  idToken: string
 ): Promise<JwtInput> {
   if (provider === "google") {
-    const {protectedHeader, payload} = await validateGoogleIdToken(
-        idToken,
-        uid
+    const { protectedHeader, payload } = await validateGoogleIdToken(
+      idToken,
+      uid
     );
     const [headerB64, payloadB64, jwtSignature] = idToken.split(".");
     const signedHash = sha256(headerB64 + "." + payloadB64).toString("hex");
@@ -217,11 +222,11 @@ async function genJwtInput(
 
 async function requestZkp(uid: string, idToken: string, secret: string) {
   try {
-    const config = {headers: {authorization: "Bearer " + secret}};
+    const config = { headers: { authorization: "Bearer " + secret } };
     const res = await axios.post(
-        secrets.ZKP_SERVICE_URL,
-        {uid, idToken},
-        config
+      secrets.ZKP_SERVICE_URL,
+      { uid, idToken },
+      config
     );
     if (!res.data.success) {
       throw new Error("failed to request zkp: " + res.data.message);
@@ -240,10 +245,10 @@ const extractFirebaseIdToken = (req: functions.Request) => {
     !(req.cookies && req.cookies.__session)
   ) {
     functions.logger.error(
-        "No Firebase ID token was passed as a Bearer token in the Authorization header.",
-        "Make sure you authorize your request by providing the following HTTP header:",
-        "Authorization: Bearer <Firebase ID Token>",
-        "or by passing a \"__session\" cookie."
+      "No Firebase ID token was passed as a Bearer token in the Authorization header.",
+      "Make sure you authorize your request by providing the following HTTP header:",
+      "Authorization: Bearer <Firebase ID Token>",
+      'or by passing a "__session" cookie.'
     );
     throw new ServerError(403, "Unauthorized");
   }

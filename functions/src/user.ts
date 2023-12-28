@@ -1,13 +1,10 @@
 import cors from "cors";
 import * as functions from "firebase-functions";
 
-import {
-  ServerError,
-  handleError,
-} from "./utils";
-import {checkNameRateLimit} from "./ratelimiter";
-import {resolveName} from "./db/ns";
-import {getUser} from "./db/user";
+import { ServerError, handleError } from "./utils";
+import { checkNameRateLimit } from "./ratelimiter";
+import { resolveName } from "./db/ns";
+import { getUser } from "./db/user";
 
 const secrets = functions.config().doppler || {};
 
@@ -22,16 +19,16 @@ const secrets = functions.config().doppler || {};
  */
 
 export const getAddressByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
+  return cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
         throw new ServerError(429, "Too many requests");
       }
       const address = await resolveName(req.body.uid);
       if (!address) {
-        res.status(200).json({registered: false});
+        res.status(200).json({ registered: false });
       } else {
-        res.status(200).json({registered: true, address});
+        res.status(200).json({ registered: true, address });
       }
     } catch (err: unknown) {
       handleError(res, err);
@@ -55,14 +52,14 @@ export const getAddressByUid = functions.https.onRequest((req, res) => {
  *   }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
+  return cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
         throw new ServerError(429, "Too many requests");
       }
       const address = await resolveName(req.body.uid);
       if (!address) {
-        res.status(200).json({registered: false});
+        res.status(200).json({ registered: false });
       } else {
         const user = await getUser(address);
         if (user) {
@@ -102,7 +99,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  *   }
  */
 export const getUserByAddress = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
+  return cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
         throw new ServerError(429, "Too many requests");

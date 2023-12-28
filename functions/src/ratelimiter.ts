@@ -16,11 +16,11 @@ export async function getChallengeRateLimit(ip: string) {
 }
 
 export const rateLimiter = async (
-    callName: string,
-    rawId: string,
-    windowInSec: number,
-    threshold: number
-) : Promise<boolean> => {
+  callName: string,
+  rawId: string,
+  windowInSec: number,
+  threshold: number
+): Promise<boolean> => {
   const callRef = txServiceRateDBRef + callName;
   const ref = admin.database().ref(callRef);
   const id = rawId.replace(/\/|\.|#|$/g, ":");
@@ -30,7 +30,7 @@ export const rateLimiter = async (
   if (snapshot.exists()) {
     const snapVal: string = snapshot.val();
     const tsMap: Map<string, number[]> = new Map(
-        Object.entries(JSON.parse(snapVal))
+      Object.entries(JSON.parse(snapVal))
     );
 
     if (!tsMap.has(timestampKey)) {
@@ -52,11 +52,13 @@ export const rateLimiter = async (
 };
 
 const addRecord = (
-    id: string, timestampList: number[], ref: admin.database.Reference
+  id: string,
+  timestampList: number[],
+  ref: admin.database.Reference
 ) => {
   const timestampMap = new Map<string, number[]>([
     [timestampKey, timestampList],
   ]);
   const timestampObj = Object.fromEntries(timestampMap);
-  ref.update({[`${id}`]: JSON.stringify(timestampObj)});
+  ref.update({ [`${id}`]: JSON.stringify(timestampObj) });
 };

@@ -1,8 +1,8 @@
 import cors from "cors";
 import * as functions from "firebase-functions";
 import crypto from "crypto";
-import {secp256r1} from "@noble/curves/p256";
-import {ethers} from "ethers";
+import { secp256r1 } from "@noble/curves/p256";
+import { ethers } from "ethers";
 import * as cookie from "cookie";
 
 import {
@@ -19,7 +19,7 @@ import {
   getPublicKeyPemRsa,
   signAsymmetricRsa,
 } from "./gcloudKms";
-import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
+import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
 import {
   registerUser,
   getAuth,
@@ -27,7 +27,7 @@ import {
   preAuth,
   postLogout,
 } from "./db/auth";
-import {getAccountAddress} from "./account";
+import { getAccountAddress } from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
 import base64url from "base64url";
@@ -60,7 +60,7 @@ const SESSION_TTL = 60 * 60 * 24 * 5; // valid for 5 days
  * }
  */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
-  return cors({origin: true, credentials: true})(req, res, async () => {
+  return cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
         throw new ServerError(429, "Too many requests");
@@ -91,7 +91,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         })
         .appendHeader("Cache-Control", "private")
         .status(200)
-        .json({address, csrfToken, encDek});
+        .json({ address, csrfToken, encDek });
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -108,7 +108,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
  * }
  */
 export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
-  cors({origin: true, credentials: true})(req, res, async () => {
+  cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       if (
         secrets.ENV !== "dev" &&
@@ -122,11 +122,11 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
         throw new ServerError(404, "User not found");
       }
       if (auth.challenge && auth.updatedAt.seconds + 180 > epoch()) {
-        res.status(200).json({challenge: auth.challenge});
+        res.status(200).json({ challenge: auth.challenge });
       } else {
         const challenge = crypto.randomBytes(32).toString("hex");
         await preAuth(address, challenge);
-        res.status(200).json({challenge});
+        res.status(200).json({ challenge });
       }
     } catch (err: unknown) {
       handleError(res, err);
@@ -152,7 +152,7 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  * }
  */
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
-  cors({origin: true, credentials: true})(req, res, async () => {
+  cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       const address = ethers.getAddress(req.body.address);
       const auth = await getAuth(address);
@@ -202,7 +202,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
         })
         .appendHeader("Cache-Control", "private")
         .status(200)
-        .json({csrfToken, dek, encNewDek});
+        .json({ csrfToken, dek, encNewDek });
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -217,17 +217,17 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
  * }
  */
 export const logout = functions.https.onRequest((req, res) => {
-  cors({origin: true, credentials: true})(req, res, async () => {
+  cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       const sessionCookie = cookie.parse(req.headers.cookie || "");
       const session = sessionCookie.__session;
       if (!session) {
-        res.status(200).json({success: true});
+        res.status(200).json({ success: true });
         return;
       }
       const claims = await verifyJwt(session);
       await postLogout(claims.uid);
-      res.cookie("__session", undefined).status(200).json({success: true});
+      res.cookie("__session", undefined).status(200).json({ success: true });
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -247,7 +247,7 @@ export const logout = functions.https.onRequest((req, res) => {
  * }
  */
 export const getDeks = functions.https.onRequest((req, res) => {
-  cors({origin: true, credentials: true})(req, res, async () => {
+  cors({ origin: true, credentials: true })(req, res, async () => {
     try {
       const sessionCookie = cookie.parse(req.headers.cookie || "");
       const session = sessionCookie.__session;
@@ -268,7 +268,7 @@ export const getDeks = functions.https.onRequest((req, res) => {
         decryptWithSymmKey(req.body.encDek, aad),
         encryptWithSymmKey(req.body.newDek, aad),
       ]);
-      res.status(200).json({dek, encNewDek});
+      res.status(200).json({ dek, encNewDek });
     } catch (err: unknown) {
       handleError(res, err);
     }
@@ -278,7 +278,7 @@ export const getDeks = functions.https.onRequest((req, res) => {
 const EcdsaSigAsnParse: {
   decode: (asnStringBuffer: Buffer, format: "der") => { r: BN; s: BN };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} = asn1.define("EcdsaSig", function(this: any) {
+} = asn1.define("EcdsaSig", function (this: any) {
   // eslint-disable-next-line no-invalid-this
   this.seq().obj(this.key("r").int(), this.key("s").int());
 });
@@ -364,7 +364,7 @@ async function signJwt(
   return `${header}.${payload}.${base64url.encode(signature)}`;
 }
 
-export const verifyJwt = async function(token: string): Promise<{
+export const verifyJwt = async function (token: string): Promise<{
   uid: string;
   session: string;
 }> {
@@ -375,7 +375,7 @@ export const verifyJwt = async function(token: string): Promise<{
   verify.update(`${header}.${payload}`);
   if (
     !verify.verify(
-      {key: jwtPubPem, padding: crypto.constants.RSA_PKCS1_PSS_PADDING},
+      { key: jwtPubPem, padding: crypto.constants.RSA_PKCS1_PSS_PADDING },
       signatureBuffer
     )
   ) {

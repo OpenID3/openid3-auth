@@ -1,6 +1,6 @@
-import {Timestamp} from "firebase-admin/firestore";
-import {Passkey, firestore} from "./utils";
-import {ServerError, epoch} from "../utils";
+import { Timestamp } from "firebase-admin/firestore";
+import { Passkey, firestore } from "./utils";
+import { ServerError, epoch } from "../utils";
 
 export interface Auth {
   passkey: Passkey;
@@ -19,44 +19,44 @@ export async function getAuth(address: string): Promise<Auth | null> {
 
 export async function preAuth(address: string, challenge: string) {
   await firestore()
-      .collection("auth")
-      .doc(address)
-      .update({
-        challenge: challenge,
-        updatedAt: new Timestamp(epoch(), 0),
-      });
+    .collection("auth")
+    .doc(address)
+    .update({
+      challenge: challenge,
+      updatedAt: new Timestamp(epoch(), 0),
+    });
 }
 
 export async function postAuth(address: string, csrfToken: string) {
   await firestore()
-      .collection("auth")
-      .doc(address)
-      .update({
-        challenge: null,
-        updatedAt: new Timestamp(epoch(), 0),
-        csrfToken,
-      });
+    .collection("auth")
+    .doc(address)
+    .update({
+      challenge: null,
+      updatedAt: new Timestamp(epoch(), 0),
+      csrfToken,
+    });
 }
 
 export async function postLogout(address: string) {
   await firestore()
-      .collection("auth")
-      .doc(address)
-      .update({
-        challenge: null,
-        csrfToken: null,
-        updatedAt: new Timestamp(epoch(), 0),
-      });
+    .collection("auth")
+    .doc(address)
+    .update({
+      challenge: null,
+      csrfToken: null,
+      updatedAt: new Timestamp(epoch(), 0),
+    });
 }
 
 export async function registerUser(
-    uid: string,
-    address: string,
-    passkey: Passkey,
-    factory: string,
-    operator: string,
-    metadata: string,
-    csrfToken: string,
+  uid: string,
+  address: string,
+  passkey: Passkey,
+  factory: string,
+  operator: string,
+  metadata: string,
+  csrfToken: string
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
@@ -67,7 +67,7 @@ export async function registerUser(
     if (doc && doc.exists) {
       throw new ServerError(400, "name already taken");
     }
-    t.set(nsRef, {address});
+    t.set(nsRef, { address });
     t.set(userRef, {
       passkey,
       factory,
@@ -82,4 +82,3 @@ export async function registerUser(
     });
   });
 }
-
