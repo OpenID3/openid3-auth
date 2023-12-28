@@ -44,7 +44,7 @@ import * as acc from "../account";
 import {Timestamp} from "@google-cloud/firestore";
 import {encryptWithSymmKey} from "../gcloudKms";
 import {ethers} from "ethers";
-import {HexlinkError, genNameHash} from "../utils";
+import {ServerError, genNameHash} from "../utils";
 
 const account: string = "0x" + crypto.randomBytes(20).toString("hex");
 jest.spyOn(acc, "getAccountAddress").mockImplementation(
@@ -146,9 +146,9 @@ describe("registerPasskey", () => {
       try {
         genNameHash(name);
       } catch (e) {
-        expect(e).toBeInstanceOf(HexlinkError);
-        expect((e as HexlinkError).code).toEqual(code);
-        expect((e as HexlinkError).message).toEqual(message);
+        expect(e).toBeInstanceOf(ServerError);
+        expect((e as ServerError).code).toEqual(code);
+        expect((e as ServerError).message).toEqual(message);
       }
     };
 
