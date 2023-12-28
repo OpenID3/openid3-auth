@@ -2,7 +2,7 @@ import cors from "cors";
 import * as functions from "firebase-functions";
 
 import {
-  HexlinkError,
+  ServerError,
   handleError,
 } from "./utils";
 import {checkNameRateLimit} from "./ratelimiter";
@@ -25,7 +25,7 @@ export const getAddressByUid = functions.https.onRequest((req, res) => {
   return cors({origin: true, credentials: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
+        throw new ServerError(429, "Too many requests");
       }
       const address = await resolveName(req.body.uid);
       if (!address) {
@@ -58,7 +58,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
   return cors({origin: true, credentials: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
+        throw new ServerError(429, "Too many requests");
       }
       const address = await resolveName(req.body.uid);
       if (!address) {
@@ -77,7 +77,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
             },
           });
         } else {
-          throw new HexlinkError(500, "user data lost");
+          throw new ServerError(500, "user data lost");
         }
       }
     } catch (err: unknown) {
@@ -105,7 +105,7 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
   return cors({origin: true, credentials: true})(req, res, async () => {
     try {
       if (secrets.ENV !== "dev" && (await checkNameRateLimit(req.ip || ""))) {
-        throw new HexlinkError(429, "Too many requests");
+        throw new ServerError(429, "Too many requests");
       }
       const user = await getUser(req.body.address);
       if (user) {
@@ -120,7 +120,7 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
           },
         });
       } else {
-        throw new HexlinkError(404, "user not found");
+        throw new ServerError(404, "user not found");
       }
     } catch (err: unknown) {
       handleError(res, err);

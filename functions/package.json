@@ -36,7 +36,8 @@
     "ethers": "^6.8.1",
     "fast-crc32c": "^2.0.0",
     "firebase-admin": "^11.4.1",
-    "firebase-functions": "^4.4.1"
+    "firebase-functions": "^4.4.1",
+    "jose": "^5.2.0"
   },
   "devDependencies": {
     "@noble/curves": "^1.2.0",

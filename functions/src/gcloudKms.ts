@@ -120,3 +120,79 @@ export const decryptWithSymmKey = async function(
 
   return plaintextBuffer.toString("utf8");
 };
+
+const jwtSignerConfig = () => ({
+  projectId: secrets.FIREBASE_PROJECT_ID,
+  locationId: secrets.GCP_KEY_LOCATION_GLOBAL,
+  keyRingId: secrets.JWT_SIGNER_KEY_RING_ID,
+  keyId: secrets.JWT_SIGNER_KEY_ID,
+  versionId: secrets.JWT_SIGNER_KEY_VERSION_ID,
+});
+
+const getAsymmKeyName = function() {
+  const config = jwtSignerConfig();
+  return client.cryptoKeyVersionPath(
+      config.projectId,
+      config.locationId,
+      config.keyRingId,
+      config.keyId,
+      config.versionId
+  );
+};
+
+const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
+  const sign = crypto.createSign("RSA-SHA256");
+  const key = {
+    key: secrets.JWT_SIGNER_DEV_PRIVATE_KEY,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+  };
+  sign.update(digestBuffer);
+  return sign.sign(key);
+};
+
+export const signAsymmetricRsa = async function(digestBuffer: Buffer) {
+  if (secrets.ENV === "dev") {
+    return signAsymmetricRsaWithDevKey(digestBuffer);
+  }
+  const digestCrc32c = crc32c.calculate(digestBuffer);
+  const versionName = getAsymmKeyName();
+  const [signResponse] = await client.asymmetricSign({
+    name: versionName,
+    digest: {
+      sha256: digestBuffer,
+    },
+    digestCrc32c: {
+      value: digestCrc32c,
+    },
+  });
+
+  if (signResponse.name !== versionName) {
+    throw new Error("AsymmetricSign: request corrupted in-transit");
+  }
+  if (!signResponse.verifiedDigestCrc32c) {
+    throw new Error("AsymmetricSign: request corrupted in-transit");
+  }
+  if (
+    !signResponse.signature ||
+    !signResponse.signatureCrc32c ||
+    crc32c.calculate(<string>signResponse.signature) !==
+      Number(signResponse.signatureCrc32c.value)
+  ) {
+    throw new Error("AsymmetricSign: response corrupted in-transit");
+  }
+  return Buffer.from(signResponse.signature);
+};
+
+export async function getPublicKeyPemRsa() {
+  if (secrets.ENV === "dev") {
+    return secrets.JWT_SIGNER_DEV_PUB_PEM;
+  }
+  const versionName = getAsymmKeyName();
+  const [publicKey] = await client.getPublicKey({
+    name: versionName,
+  });
+  if (!publicKey.pem) {
+    throw new Error("AsymmetricVerify: public key not found");
+  }
+  return publicKey.pem;
+}

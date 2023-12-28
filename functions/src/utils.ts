@@ -6,7 +6,7 @@ export const epoch = () => {
   return Math.floor(new Date().getTime() / 1000);
 };
 
-export class HexlinkError extends Error {
+export class ServerError extends Error {
   code: number;
 
   constructor(code: number, message: string) {
@@ -19,7 +19,7 @@ export const handleError = function(
     res: functions.Response,
     err: unknown
 ) {
-  if (err instanceof HexlinkError) {
+  if (err instanceof ServerError) {
     res.status(err.code).json({message: err.message});
   } else {
     console.log("Error: ", err);
@@ -55,17 +55,17 @@ export const genNameHash = (username: string) => {
 const validateUsername = (username: string) => {
   username = username.trim().toLowerCase();
   if (!username.endsWith(".mizu")) {
-    throw new HexlinkError(400, INVALID_USER_NAME_NON_MIZU_NAME);
+    throw new ServerError(400, INVALID_USER_NAME_NON_MIZU_NAME);
   }
   const labels = username.split(".");
   if (labels.length > 2) {
-    throw new HexlinkError(400, SUBDOMAIN_NOT_ALLOWED);
+    throw new ServerError(400, SUBDOMAIN_NOT_ALLOWED);
   }
   if (labels[0].length < 5) {
-    throw new HexlinkError(400, INVALID_USER_NAME_TOO_SHORT);
+    throw new ServerError(400, INVALID_USER_NAME_TOO_SHORT);
   }
   if (!/^[a-z0-9]+$/.test(labels[0])) {
-    throw new HexlinkError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
+    throw new ServerError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
   }
   return username;
 };
