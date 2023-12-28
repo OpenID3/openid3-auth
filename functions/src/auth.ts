@@ -278,7 +278,7 @@ export const getDeks = functions.https.onRequest((req, res) => {
 const EcdsaSigAsnParse: {
   decode: (asnStringBuffer: Buffer, format: "der") => { r: BN; s: BN };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} = asn1.define("EcdsaSig", function (this: any) {
+} = asn1.define("EcdsaSig", function(this: any) {
   // eslint-disable-next-line no-invalid-this
   this.seq().obj(this.key("r").int(), this.key("s").int());
 });
@@ -337,11 +337,11 @@ const validatePasskeySignature = (
   }
 };
 
-async function signJwt(
+const signJwt = async (
   address: string,
   sessionId: string,
   ttl: number
-): Promise<string> {
+): Promise<string> => {
   const header = base64url(
     JSON.stringify({
       alg: "RS256",
@@ -362,12 +362,14 @@ async function signJwt(
     Buffer.from(`${header}.${payload}`)
   );
   return `${header}.${payload}.${base64url.encode(signature)}`;
-}
+};
 
-export const verifyJwt = async function (token: string): Promise<{
+const verifyJwt = async (
+  token: string
+): Promise<{
   uid: string;
   session: string;
-}> {
+}> => {
   const jwtPubPem = await getPublicKeyPemRsa();
   const [header, payload, signature] = token.split(".");
   const signatureBuffer = Buffer.from(signature, "base64url");

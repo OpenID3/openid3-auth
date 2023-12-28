@@ -15,7 +15,7 @@ const encryptorConfig = () => ({
   keyId: secrets.ENCRYPTOR_KEY_ID,
 });
 
-const getSymmKeyName = async function () {
+const getSymmKeyName = async () => {
   const config = encryptorConfig();
   return client.cryptoKeyPath(
     config.projectId,
@@ -50,10 +50,10 @@ const decryptWithDevKey = (text: string, aad: Buffer) => {
   return Buffer.concat([decrypted, decipher.final()]).toString("utf-8");
 };
 
-export const encryptWithSymmKey = async function (
+export const encryptWithSymmKey = async (
   plaintext: string,
   aad: Buffer
-) {
+) => {
   if (plaintext === undefined) {
     return undefined;
   }
@@ -88,10 +88,10 @@ export const encryptWithSymmKey = async function (
   return Buffer.from(ciphertext).toString("base64");
 };
 
-export const decryptWithSymmKey = async function (
+export const decryptWithSymmKey = async (
   text: string | undefined,
   aad: Buffer
-) {
+) => {
   if (text === undefined) {
     return undefined;
   }
@@ -129,7 +129,7 @@ const jwtSignerConfig = () => ({
   versionId: secrets.JWT_SIGNER_KEY_VERSION_ID,
 });
 
-const getAsymmKeyName = function () {
+const getAsymmKeyName = () => {
   const config = jwtSignerConfig();
   return client.cryptoKeyVersionPath(
     config.projectId,
@@ -150,7 +150,7 @@ const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
   return sign.sign(key);
 };
 
-export const signAsymmetricRsa = async function (digestBuffer: Buffer) {
+export const signAsymmetricRsa = async (digestBuffer: Buffer) => {
   if (secrets.ENV === "dev") {
     return signAsymmetricRsaWithDevKey(digestBuffer);
   }
@@ -184,7 +184,7 @@ export const signAsymmetricRsa = async function (digestBuffer: Buffer) {
   return Buffer.from(signResponse.signature);
 };
 
-export async function getPublicKeyPemRsa() {
+export const getPublicKeyPemRsa = async () => {
   if (secrets.ENV === "dev") {
     return secrets.JWT_SIGNER_DEV_PUB_PEM;
   }
@@ -196,4 +196,4 @@ export async function getPublicKeyPemRsa() {
     throw new Error("AsymmetricVerify: public key not found");
   }
   return publicKey.pem;
-}
+};
