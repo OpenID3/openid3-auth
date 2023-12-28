@@ -1,3 +1,9 @@
 #!/bin/bash
 
-doppler run --config prd -- node ./dist/watch.js
+if [ -z "${ENV}" ]; then
+    env='dev'
+else
+    env=${ENV}
+fi
+
+doppler run --config $env -- node ./dist/watch.js

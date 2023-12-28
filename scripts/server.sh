@@ -1,3 +1,13 @@
-!/bin/bash
+#!/bin/bash
 
-doppler run --config prd -- node ./dist/index.js
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+cd $SCRIPT_DIR/../wellknown
+
+if [ -z "${ENV}" ]; then
+    env='dev'
+else
+    env=${ENV}
+fi
+
+doppler run --config $env -- node ./dist/index.js
