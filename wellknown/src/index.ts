@@ -1,6 +1,6 @@
 import cors from "cors";
 import express, { Application } from "express";
-import { getPubkey } from "./ns";
+import { getPubkey, stripHex } from "./ns";
 import { HexlinkError } from "./types";
 
 const app: Application = express();
@@ -17,10 +17,11 @@ app.get("/.well-known/nostr.json", async (req, res) => {
   try {
     const pubkey = await getPubkey(name);
     if (pubkey) {
+      const normalized = stripHex(pubkey);
       return res.status(200).json({
-        names: { [name]: pubkey },
+        names: { [name]: normalized },
         relays: {
-          [pubkey]: ["https://relay.hexlink.io"]
+          [normalized]: ["https://relay.hexlink.io"]
         },
       });
     } else {

@@ -59,3 +59,10 @@ export const getPubkey = async (name: string): Promise<HexString | undefined> =>
         return getMetadata(address);
     }
 }
+
+export const stripHex = (value: string): string => {
+  if (value.startsWith("0x")) {
+    return value.slice(2);
+  }
+  return value;
+}
