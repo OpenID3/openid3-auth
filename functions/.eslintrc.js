@@ -28,6 +28,7 @@ module.exports = {
   ],
   rules: {
     "quotes": ["error", "double"],
+    "indent": ["error", 2],
     "import/no-unresolved": 0,
     "require-jsdoc": 0,
     "@typescript-eslint/no-non-null-assertion": "off",

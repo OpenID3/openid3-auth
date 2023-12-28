@@ -18,10 +18,10 @@ const encryptorConfig = () => ({
 const getSymmKeyName = async function() {
   const config = encryptorConfig();
   return client.cryptoKeyPath(
-      config.projectId,
-      config.locationId,
-      config.keyRingId,
-      config.keyId
+    config.projectId,
+    config.locationId,
+    config.keyRingId,
+    config.keyId
   );
 };
 
@@ -51,8 +51,8 @@ const decryptWithDevKey = (text: string, aad: Buffer) => {
 };
 
 export const encryptWithSymmKey = async function(
-    plaintext: string,
-    aad: Buffer
+  plaintext: string,
+  aad: Buffer
 ) {
   if (plaintext === undefined) {
     return undefined;
@@ -89,8 +89,8 @@ export const encryptWithSymmKey = async function(
 };
 
 export const decryptWithSymmKey = async function(
-    text: string | undefined,
-    aad: Buffer
+  text: string | undefined,
+  aad: Buffer
 ) {
   if (text === undefined) {
     return undefined;
@@ -132,11 +132,11 @@ const jwtSignerConfig = () => ({
 const getAsymmKeyName = function() {
   const config = jwtSignerConfig();
   return client.cryptoKeyVersionPath(
-      config.projectId,
-      config.locationId,
-      config.keyRingId,
-      config.keyId,
-      config.versionId
+    config.projectId,
+    config.locationId,
+    config.keyRingId,
+    config.keyId,
+    config.versionId
   );
 };
 
@@ -154,7 +154,7 @@ export const signAsymmetricRsa = async function(digestBuffer: Buffer) {
   if (secrets.ENV === "dev") {
     return signAsymmetricRsaWithDevKey(digestBuffer);
   }
-  const digest = crypto.createHash('sha256').update(digestBuffer).digest();
+  const digest = crypto.createHash("sha256").update(digestBuffer).digest();
   const digestCrc32c = crc32c.calculate(digest);
   const versionName = getAsymmKeyName();
   const [signResponse] = await client.asymmetricSign({
