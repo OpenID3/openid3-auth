@@ -20,7 +20,7 @@ import {
   signAsymmetricRsa,
 } from "./gcloudKms";
 import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
-import {registerUser, getAuth, postAuth, preAuth} from "./db/auth";
+import {registerUser, getAuth, postAuth, preAuth, postLogout} from "./db/auth";
 import {getAccountAddress} from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
@@ -204,6 +204,31 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
 });
 
 /**
+ * req.body: { }
+ *
+ * res: {
+ *   success: boolean,
+ * }
+ */
+export const logout = functions.https.onRequest((req, res) => {
+  cors({origin: true, credentials: true})(req, res, async () => {
+    try {
+      const sessionCookie = cookie.parse(req.headers.cookie || "");
+      const session = sessionCookie.__session;
+      if (!session) {
+        res.status(200).json({success: true});
+        return;
+      }
+      const claims = await verifyJwt(session);
+      await postLogout(claims.uid);
+      res.cookie("__session", undefined).status(200).json({success: true});
+    } catch (err: unknown) {
+      handleError(res, err);
+    }
+  });
+});
+
+/**
  * req.body: {
  *   encDek: string, // to decrypt
  *   newDek?: string, // to encrypt
@@ -218,12 +243,17 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
 export const getDeks = functions.https.onRequest((req, res) => {
   cors({origin: true, credentials: true})(req, res, async () => {
     try {
-      const claims = await verifySessionCookie(req);
+      const sessionCookie = cookie.parse(req.headers.cookie || "");
+      const session = sessionCookie.__session;
+      if (!session) {
+        throw new ServerError(401, "UNAUTHORIZED REQUEST");
+      }
+      const claims = await verifyJwt(session);
       const auth = await getAuth(claims.uid);
       if (
-        !auth ||
-        req.body.csrfToken != auth?.csrfToken ||
-        claims.session != auth?.csrfToken
+        !auth?.csrfToken ||
+        req.body.csrfToken != auth.csrfToken ||
+        claims.session != auth.csrfToken
       ) {
         throw new ServerError(401, "Access denied");
       }
@@ -238,20 +268,6 @@ export const getDeks = functions.https.onRequest((req, res) => {
     }
   });
 });
-
-export const verifySessionCookie = async (req: functions.Request) => {
-  const sessionCookie = cookie.parse(req.headers.cookie || "");
-  const session = sessionCookie.__session;
-  if (!session) {
-    throw new ServerError(401, "UNAUTHORIZED REQUEST");
-  }
-  try {
-    return verifyJwt(session);
-  } catch (err: unknown) {
-    console.log(err);
-    throw new ServerError(401, "UNAUTHORIZED REQUEST");
-  }
-};
 
 const EcdsaSigAsnParse: {
   decode: (asnStringBuffer: Buffer, format: "der") => { r: BN; s: BN };

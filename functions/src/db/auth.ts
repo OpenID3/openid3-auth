@@ -1,11 +1,11 @@
 import {Timestamp} from "firebase-admin/firestore";
 import {Passkey, firestore} from "./utils";
-import {HexlinkError, epoch} from "../utils";
+import {ServerError, epoch} from "../utils";
 
 export interface Auth {
   passkey: Passkey;
   challenge: string | null;
-  csrfToken: string;
+  csrfToken: string | null;
   updatedAt: Timestamp;
 }
 
@@ -38,6 +38,17 @@ export async function postAuth(address: string, csrfToken: string) {
       });
 }
 
+export async function postLogout(address: string) {
+  await firestore()
+      .collection("auth")
+      .doc(address)
+      .update({
+        challenge: null,
+        csrfToken: null,
+        updatedAt: new Timestamp(epoch(), 0),
+      });
+}
+
 export async function registerUser(
     uid: string,
     address: string,
@@ -54,7 +65,7 @@ export async function registerUser(
   await db.runTransaction(async (t) => {
     const doc = await t.get(nsRef);
     if (doc && doc.exists) {
-      throw new HexlinkError(400, "name already taken");
+      throw new ServerError(400, "name already taken");
     }
     t.set(nsRef, {address});
     t.set(userRef, {
