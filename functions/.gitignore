@@ -43,3 +43,5 @@ firebase-debug.log
 ui-debug.log
 firestore-debug.log
 database-debug.log
+
+.firebaserc
