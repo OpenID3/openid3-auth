@@ -18,6 +18,8 @@ import {decryptWithSymmKey, encryptWithSymmKey} from "./gcloudKms";
 import {getChallengeRateLimit, registerRateLimit} from "./ratelimiter";
 import {registerUser, getAuth, postAuth, preAuth} from "./db/auth";
 import {getAccountAddress} from "./account";
+import * as asn1 from "asn1.js";
+import BN from "bn.js";
 
 const secrets = functions.config().doppler || {};
 
@@ -280,6 +282,13 @@ export const verifySessionCookie = async (req: functions.Request) => {
   }
 };
 
+const EcdsaSigAsnParse: {
+  decode: (asnStringBuffer: Buffer, format: "der") => { r: BN; s: BN };
+} = asn1.define("EcdsaSig", function(this: any) {
+  // eslint-disable-next-line no-invalid-this
+  this.seq().obj(this.key("r").int(), this.key("s").int());
+});
+
 const validatePasskeySignature = (
     clientDataJson: string,
     expected: string[][],
@@ -291,9 +300,7 @@ const validatePasskeySignature = (
   for (const [key, value] of expected) {
     if (parsed[key] !== value) {
       if (key === "challenge") {
-        const decodedChallenge = Buffer.from(parsed[key], "base64").toString(
-            "utf-8"
-        );
+        const decodedChallenge = Buffer.from(parsed[key], "base64").toString("utf-8");
         if (decodedChallenge !== value) {
           throw new HexlinkError(400, "invalid client data");
         }
@@ -321,9 +328,14 @@ const validatePasskeySignature = (
       ["uint8", "uint256", "uint256"],
       [4, formatHex(pubKey.x), formatHex(pubKey.y)]
   );
+  const decoded = EcdsaSigAsnParse.decode(toBuffer(signature), "der");
+  const newDecoded = {
+    r: BigInt("0x" + decoded.r.toString("hex")),
+    s: BigInt("0x" + decoded.s.toString("hex")),
+  };
   if (
     !secp256r1.verify(
-        toBuffer(signature),
+        newDecoded,
         signedDataHash,
         uncompressedPubKey.slice(2) // remove "0x"
     )
