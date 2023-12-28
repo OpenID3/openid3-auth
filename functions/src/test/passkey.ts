@@ -20,9 +20,9 @@ export const genPasskey = (id: string): Key => {
 };
 
 export const signWithPasskey = (
-    challenge: any,
+    challenge: string,
     origin: string,
-    passkey: any,
+    passkey: Key,
 ) => {
   const clientDataJson = JSON.stringify({
     challenge,
@@ -57,7 +57,7 @@ export const signRegisterRequest = (
     username: string,
     origin: string,
     factory: string,
-    passkey: any,
+    passkey: Key,
     operator: string,
     metadata: string,
     dek: string,
@@ -80,7 +80,7 @@ export const signLoginRequest = (
     address: string,
     origin: string,
     challenge: string,
-    passkey: any,
+    passkey: Key,
     dek: string, // ciphertext
     newDek?: string, // plaintext
 ) => {
