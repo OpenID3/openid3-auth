@@ -154,12 +154,13 @@ export const signAsymmetricRsa = async function(digestBuffer: Buffer) {
   if (secrets.ENV === "dev") {
     return signAsymmetricRsaWithDevKey(digestBuffer);
   }
-  const digestCrc32c = crc32c.calculate(digestBuffer);
+  const digest = crypto.createHash('sha256').update(digestBuffer).digest();
+  const digestCrc32c = crc32c.calculate(digest);
   const versionName = getAsymmKeyName();
   const [signResponse] = await client.asymmetricSign({
     name: versionName,
     digest: {
-      sha256: digestBuffer,
+      sha256: digest,
     },
     digestCrc32c: {
       value: digestCrc32c,
