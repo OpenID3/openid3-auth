@@ -1,0 +1,31 @@
+{
+  "name": "wellknown",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "nodemon index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "ethers": "^6.9.1",
+    "express": "^4.18.2",
+    "redis": "^4.6.12"
+  },
+  "devDependencies": {
+    "@openid3/contracts": "^0.0.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "@types/ws": "^8.5.10",
+    "sturdy-websocket": "^0.2.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3",
+    "ws": "^8.15.1"
+  }
+}

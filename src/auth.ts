@@ -53,29 +53,6 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       }
       const address = await getAccountAddress(req.body);
       const nameHash = genNameHash(req.body.username);
-      const challenge = crypto
-          .createHash("sha256")
-          .update(
-              Buffer.concat([
-                Buffer.from("register", "utf-8"), // action
-                toBuffer(nameHash), // uid
-                toBuffer(req.body.factory), // factory
-                toBuffer(req.body.operator), // operator
-                toBuffer(req.body.metadata), // metadata
-                toBuffer(req.body.dek), // dek
-              ])
-          )
-          .digest("base64");
-      validatePasskeySignature(
-          req.body.clientDataJson,
-          [
-            ["challenge", challenge],
-            ["origin", secrets.REACT_APP_ORIGIN],
-          ],
-          req.body.authData,
-          req.body.signature,
-          req.body.passkey
-      );
       const csrfToken = crypto.randomBytes(32).toString("hex");
       const [, encDek, token] = await Promise.all([
         registerUser(
