@@ -144,7 +144,7 @@ const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
   const sign = crypto.createSign("RSA-SHA256");
   const key = {
     key: secrets.JWT_SIGNER_DEV_PRIVATE_KEY,
-    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    padding: crypto.constants.RSA_PKCS1_PADDING,
   };
   sign.update(digestBuffer);
   return sign.sign(key);
