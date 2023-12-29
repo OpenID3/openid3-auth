@@ -50,6 +50,7 @@ const SESSION_TTL = 60 * 60 * 24 * 5; // valid for 5 days
  *  authData: string, // hex
  *  signature: string, // hex
  *  dek: string,
+ *  invitationCode: string,
  * }
  *
  * res: {
@@ -60,42 +61,47 @@ const SESSION_TTL = 60 * 60 * 24 * 5; // valid for 5 days
  * }
  */
 export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
-  return cors({ origin: true, credentials: true })(req, res, async () => {
-    try {
-      if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
-        throw new ServerError(429, "Too many requests");
+  return cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
+          throw new ServerError(429, "Too many requests");
+        }
+        const address = await getAccountAddress(req.body);
+        const nameHash = genNameHash(req.body.username);
+        const csrfToken = crypto.randomBytes(32).toString("hex");
+        const [, encDek, token] = await Promise.all([
+          registerUser(
+            nameHash,
+            address,
+            req.body.passkey,
+            req.body.factory,
+            req.body.operator,
+            req.body.metadata,
+            csrfToken,
+            req.body.invitationCode
+          ),
+          encryptWithSymmKey(req.body.dek, toBuffer(address)),
+          // we reuse csrfToken as session id since it's unique per session
+          signJwt(address, csrfToken, SESSION_TTL),
+        ]);
+        res
+          .cookie("__session", token, {
+            maxAge: SESSION_TTL * 1000,
+            httpOnly: true,
+            secure: true,
+            sameSite: "none",
+          })
+          .appendHeader("Cache-Control", "private")
+          .status(200)
+          .json({ address, csrfToken, encDek });
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const address = await getAccountAddress(req.body);
-      const nameHash = genNameHash(req.body.username);
-      const csrfToken = crypto.randomBytes(32).toString("hex");
-      const [, encDek, token] = await Promise.all([
-        registerUser(
-          nameHash,
-          address,
-          req.body.passkey,
-          req.body.factory,
-          req.body.operator,
-          req.body.metadata,
-          csrfToken
-        ),
-        encryptWithSymmKey(req.body.dek, toBuffer(address)),
-        // we reuse csrfToken as session id since it's unique per session
-        signJwt(address, csrfToken, SESSION_TTL),
-      ]);
-      res
-        .cookie("__session", token, {
-          maxAge: SESSION_TTL * 1000,
-          httpOnly: true,
-          secure: true,
-          sameSite: "none",
-        })
-        .appendHeader("Cache-Control", "private")
-        .status(200)
-        .json({ address, csrfToken, encDek });
-    } catch (err: unknown) {
-      handleError(res, err);
     }
-  });
+  );
 });
 
 /**
@@ -108,30 +114,34 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
  * }
  */
 export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
-  cors({ origin: true, credentials: true })(req, res, async () => {
-    try {
-      if (
-        secrets.ENV !== "dev" &&
-        (await getChallengeRateLimit(req.ip || ""))
-      ) {
-        throw new ServerError(429, "Too many requests");
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        if (
+          secrets.ENV !== "dev" &&
+          (await getChallengeRateLimit(req.ip || ""))
+        ) {
+          throw new ServerError(429, "Too many requests");
+        }
+        const address = ethers.getAddress(req.body.address);
+        const auth = await getAuth(address);
+        if (auth == null) {
+          throw new ServerError(404, "User not found");
+        }
+        if (auth.challenge && auth.updatedAt.seconds + 180 > epoch()) {
+          res.status(200).json({ challenge: auth.challenge });
+        } else {
+          const challenge = crypto.randomBytes(32).toString("hex");
+          await preAuth(address, challenge);
+          res.status(200).json({ challenge });
+        }
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const address = ethers.getAddress(req.body.address);
-      const auth = await getAuth(address);
-      if (auth == null) {
-        throw new ServerError(404, "User not found");
-      }
-      if (auth.challenge && auth.updatedAt.seconds + 180 > epoch()) {
-        res.status(200).json({ challenge: auth.challenge });
-      } else {
-        const challenge = crypto.randomBytes(32).toString("hex");
-        await preAuth(address, challenge);
-        res.status(200).json({ challenge });
-      }
-    } catch (err: unknown) {
-      handleError(res, err);
     }
-  });
+  );
 });
 
 /*
@@ -152,61 +162,65 @@ export const getPasskeyChallenge = functions.https.onRequest((req, res) => {
  * }
  */
 export const loginWithPasskey = functions.https.onRequest((req, res) => {
-  cors({ origin: true, credentials: true })(req, res, async () => {
-    try {
-      const address = ethers.getAddress(req.body.address);
-      const auth = await getAuth(address);
-      if (!auth?.challenge) {
-        throw new ServerError(404, "User not found or challenge not set");
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        const address = ethers.getAddress(req.body.address);
+        const auth = await getAuth(address);
+        if (!auth?.challenge) {
+          throw new ServerError(404, "User not found or challenge not set");
+        }
+        if (auth.updatedAt.seconds + 180 < epoch()) {
+          throw new ServerError(403, "invalid challenge");
+        }
+        const challenge = crypto
+          .createHash("sha256")
+          .update(
+            Buffer.concat([
+              Buffer.from("login", "utf-8"), // action
+              toBuffer(address), // address
+              toBuffer(auth.challenge), // challenge
+              Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
+              toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
+            ])
+          )
+          .digest("base64");
+        validatePasskeySignature(
+          req.body.clientDataJson,
+          [
+            ["challenge", challenge],
+            ["origin", secrets.REACT_APP_ORIGIN],
+          ],
+          req.body.authData,
+          req.body.signature,
+          auth.passkey
+        );
+        const csrfToken = crypto.randomBytes(32).toString("hex");
+        const aad = toBuffer(address);
+        const [, dek, encNewDek, token] = await Promise.all([
+          postAuth(address, csrfToken),
+          decryptWithSymmKey(req.body.encDek, aad),
+          encryptWithSymmKey(req.body.newDek, aad),
+          // we reuse csrfToken as session id since it's unique per session
+          signJwt(address, csrfToken, SESSION_TTL),
+        ]);
+        res
+          .cookie("__session", token, {
+            maxAge: SESSION_TTL * 1000,
+            httpOnly: true,
+            secure: true,
+            sameSite: "none",
+          })
+          .appendHeader("Cache-Control", "private")
+          .status(200)
+          .json({ csrfToken, dek, encNewDek });
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      if (auth.updatedAt.seconds + 180 < epoch()) {
-        throw new ServerError(403, "invalid challenge");
-      }
-      const challenge = crypto
-        .createHash("sha256")
-        .update(
-          Buffer.concat([
-            Buffer.from("login", "utf-8"), // action
-            toBuffer(address), // address
-            toBuffer(auth.challenge), // challenge
-            Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
-            toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
-          ])
-        )
-        .digest("base64");
-      validatePasskeySignature(
-        req.body.clientDataJson,
-        [
-          ["challenge", challenge],
-          ["origin", secrets.REACT_APP_ORIGIN],
-        ],
-        req.body.authData,
-        req.body.signature,
-        auth.passkey
-      );
-      const csrfToken = crypto.randomBytes(32).toString("hex");
-      const aad = toBuffer(address);
-      const [, dek, encNewDek, token] = await Promise.all([
-        postAuth(address, csrfToken),
-        decryptWithSymmKey(req.body.encDek, aad),
-        encryptWithSymmKey(req.body.newDek, aad),
-        // we reuse csrfToken as session id since it's unique per session
-        signJwt(address, csrfToken, SESSION_TTL),
-      ]);
-      res
-        .cookie("__session", token, {
-          maxAge: SESSION_TTL * 1000,
-          httpOnly: true,
-          secure: true,
-          sameSite: "none",
-        })
-        .appendHeader("Cache-Control", "private")
-        .status(200)
-        .json({ csrfToken, dek, encNewDek });
-    } catch (err: unknown) {
-      handleError(res, err);
     }
-  });
+  );
 });
 
 /**
@@ -217,22 +231,26 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
  * }
  */
 export const logout = functions.https.onRequest((req, res) => {
-  cors({ origin: true, credentials: true })(req, res, async () => {
-    try {
-      const sessionCookie = cookie.parse(req.headers.cookie || "");
-      const session = sessionCookie.__session;
-      if (!session) {
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        const sessionCookie = cookie.parse(req.headers.cookie || "");
+        const session = sessionCookie.__session;
+        if (!session) {
+          res.status(200).json({ success: true });
+          return;
+        }
+        const claims = await verifyJwt(session);
+        await postLogout(claims.uid);
+        res.clearCookie("__session");
         res.status(200).json({ success: true });
-        return;
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const claims = await verifyJwt(session);
-      await postLogout(claims.uid);
-      res.clearCookie("__session");
-      res.status(200).json({ success: true });
-    } catch (err: unknown) {
-      handleError(res, err);
     }
-  });
+  );
 });
 
 /**
@@ -248,32 +266,36 @@ export const logout = functions.https.onRequest((req, res) => {
  * }
  */
 export const getDeks = functions.https.onRequest((req, res) => {
-  cors({ origin: true, credentials: true })(req, res, async () => {
-    try {
-      const sessionCookie = cookie.parse(req.headers.cookie || "");
-      const session = sessionCookie.__session;
-      if (!session) {
-        throw new ServerError(401, "UNAUTHORIZED REQUEST");
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        const sessionCookie = cookie.parse(req.headers.cookie || "");
+        const session = sessionCookie.__session;
+        if (!session) {
+          throw new ServerError(401, "UNAUTHORIZED REQUEST");
+        }
+        const claims = await verifyJwt(session);
+        const auth = await getAuth(claims.uid);
+        if (
+          !auth?.csrfToken ||
+          req.body.csrfToken != auth.csrfToken ||
+          claims.session != auth.csrfToken
+        ) {
+          throw new ServerError(401, "Access denied");
+        }
+        const aad = toBuffer(claims.uid);
+        const [dek, encNewDek] = await Promise.all([
+          decryptWithSymmKey(req.body.encDek, aad),
+          encryptWithSymmKey(req.body.newDek, aad),
+        ]);
+        res.status(200).json({ dek, encNewDek });
+      } catch (err: unknown) {
+        handleError(res, err);
       }
-      const claims = await verifyJwt(session);
-      const auth = await getAuth(claims.uid);
-      if (
-        !auth?.csrfToken ||
-        req.body.csrfToken != auth.csrfToken ||
-        claims.session != auth.csrfToken
-      ) {
-        throw new ServerError(401, "Access denied");
-      }
-      const aad = toBuffer(claims.uid);
-      const [dek, encNewDek] = await Promise.all([
-        decryptWithSymmKey(req.body.encDek, aad),
-        encryptWithSymmKey(req.body.newDek, aad),
-      ]);
-      res.status(200).json({ dek, encNewDek });
-    } catch (err: unknown) {
-      handleError(res, err);
     }
-  });
+  );
 });
 
 const EcdsaSigAsnParse: {

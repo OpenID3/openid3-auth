@@ -1,6 +1,9 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { Passkey, firestore } from "./utils";
 import { ServerError, epoch } from "../utils";
+import * as functions from "firebase-functions";
+
+const secrets = functions.config().doppler || {};
 
 export interface Auth {
   passkey: Passkey;
@@ -56,16 +59,29 @@ export async function registerUser(
   factory: string,
   operator: string,
   metadata: string,
-  csrfToken: string
+  csrfToken: string,
+  invitationCode: string
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
   const userRef = db.collection("users").doc(address);
   const authRef = db.collection("auth").doc(address);
+  const skipInvitationCheck = secrets.SKIP_INVITATION_CHECK === "true";
+  const codeRef = db.collection("invitations").doc(invitationCode);
   await db.runTransaction(async (t) => {
-    const doc = await t.get(nsRef);
-    if (doc && doc.exists) {
+    const user = await t.get(nsRef);
+    if (user && user.exists) {
       throw new ServerError(400, "name already taken");
+    }
+    if (!skipInvitationCheck) {
+      const invitation = await t.get(codeRef);
+      if (invitation && invitation.exists) {
+        if (invitation.data()?.usedBy) {
+          throw new ServerError(400, "invitation code already used");
+        }
+      } else {
+        throw new ServerError(400, "invalid invitation code");
+      }
     }
     t.set(nsRef, { address });
     t.set(userRef, {
@@ -73,12 +89,18 @@ export async function registerUser(
       factory,
       operator,
       metadata,
-      createdAt: new Timestamp(epoch(), 0),
+      createdAt: Timestamp.now(),
     });
     t.set(authRef, {
       passkey,
       csrfToken,
-      updatedAt: new Timestamp(epoch(), 0),
+      updatedAt: Timestamp.now(),
     });
+    if (!skipInvitationCheck) {
+      t.update(codeRef, {
+        usedBy: address,
+        usedAt: Timestamp.now(),
+      });
+    }
   });
 }
