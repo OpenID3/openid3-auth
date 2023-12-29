@@ -84,7 +84,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
       ]);
       res
         .cookie("__session", token, {
-          maxAge: SESSION_TTL,
+          maxAge: SESSION_TTL * 1000,
           httpOnly: true,
           secure: true,
           sameSite: "none",
@@ -227,7 +227,7 @@ export const logout = functions.https.onRequest((req, res) => {
       }
       const claims = await verifyJwt(session);
       await postLogout(claims.uid);
-      res.cookie("__session", undefined).status(200).json({ success: true });
+      res.clearCookie("__session").status(200).json({ success: true });
     } catch (err: unknown) {
       handleError(res, err);
     }
