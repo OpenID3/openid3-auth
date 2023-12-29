@@ -227,7 +227,8 @@ export const logout = functions.https.onRequest((req, res) => {
       }
       const claims = await verifyJwt(session);
       await postLogout(claims.uid);
-      res.clearCookie("__session").status(200).json({ success: true });
+      res.clearCookie("__session");
+      res.status(200).json({ success: true });
     } catch (err: unknown) {
       handleError(res, err);
     }
