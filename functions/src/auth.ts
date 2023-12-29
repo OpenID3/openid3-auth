@@ -195,7 +195,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
       ]);
       res
         .cookie("__session", token, {
-          maxAge: SESSION_TTL,
+          maxAge: SESSION_TTL * 1000,
           httpOnly: true,
           secure: true,
           sameSite: "none",
