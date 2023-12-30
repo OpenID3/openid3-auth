@@ -76,12 +76,8 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           registerUser(
             nameHash,
             address,
-            req.body.passkey,
-            req.body.factory,
-            req.body.operator,
-            req.body.metadata,
             csrfToken,
-            req.body.invitationCode
+            req.body,
           ),
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
           // we reuse csrfToken as session id since it's unique per session

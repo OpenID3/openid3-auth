@@ -55,19 +55,22 @@ export async function postLogout(address: string) {
 export async function registerUser(
   uid: string,
   address: string,
-  passkey: Passkey,
-  factory: string,
-  operator: string,
-  metadata: string,
   csrfToken: string,
-  invitationCode: string
+  request: {
+    username: string,
+    passkey: Passkey,
+    factory: string,
+    operator: string,
+    metadata: string,
+    invitationCode: string
+  }
 ) {
   const db = firestore();
   const nsRef = db.collection("mns").doc(uid);
   const userRef = db.collection("users").doc(address);
   const authRef = db.collection("auth").doc(address);
   const skipInvitationCheck = secrets.SKIP_INVITATION_CHECK === "true";
-  const codeRef = db.collection("invitations").doc(invitationCode);
+  const codeRef = db.collection("invitations").doc(request.invitationCode);
   await db.runTransaction(async (t) => {
     const user = await t.get(nsRef);
     if (user && user.exists) {
@@ -85,14 +88,15 @@ export async function registerUser(
     }
     t.set(nsRef, { address });
     t.set(userRef, {
-      passkey,
-      factory,
-      operator,
-      metadata,
+      passkey: request.passkey,
+      factory: request.factory,
+      operator: request.operator,
+      metadata: request.metadata,
+      username: request.username,
       createdAt: Timestamp.now(),
     });
     t.set(authRef, {
-      passkey,
+      passkey: request.passkey,
       csrfToken,
       updatedAt: Timestamp.now(),
     });
