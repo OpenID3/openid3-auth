@@ -49,6 +49,7 @@ export const getAddressByUid = functions.https.onRequest((req, res) => {
  *     operator: string,
  *     metadata: string,
  *     passkey: Passkey,
+ *     username: string,
  *   }
  */
 export const getUserByUid = functions.https.onRequest((req, res) => {
@@ -71,6 +72,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
               passkey: user.passkey,
               operator: user.operator,
               metadata: user.metadata,
+              username: user.username,
             },
           });
         } else {
@@ -96,6 +98,7 @@ export const getUserByUid = functions.https.onRequest((req, res) => {
  *     operator: string,
  *     metadata: string,
  *     passkey: Passkey,
+ *     username: string,
  *   }
  */
 export const getUserByAddress = functions.https.onRequest((req, res) => {
@@ -114,6 +117,7 @@ export const getUserByAddress = functions.https.onRequest((req, res) => {
             passkey: user.passkey,
             operator: user.operator,
             metadata: user.metadata,
+            username: user.username,
           },
         });
       } else {
