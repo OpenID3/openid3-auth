@@ -245,7 +245,7 @@ describe("registerPasskey", () => {
       passkey: passkey.pubKey,
       challenge: "",
       updatedAt: new Timestamp(utils.epoch(), 0),
-      csrfToken: "",
+      sessions: [],
     };
     jest
       .spyOn(adb, "preAuth")
@@ -256,8 +256,8 @@ describe("registerPasskey", () => {
       });
     jest
       .spyOn(adb, "postAuth")
-      .mockImplementation((_uid: string, csrfToken: string) => {
-        authDb.csrfToken = csrfToken;
+      .mockImplementation((_uid: string, sessions: adb.Session[]) => {
+        authDb.sessions = sessions;
         return Promise.resolve();
       });
     jest
@@ -280,7 +280,8 @@ describe("registerPasskey", () => {
     const loginReq = buildLoginRequest(account, authDb.challenge!);
     const secondDone = Promise.resolve();
     const loginRes = new MockedResponse(200, (response: any) => {
-      expect(authDb.csrfToken).toEqual(response.csrfToken);
+      expect(authDb.sessions.length).toEqual(1);
+      expect(authDb.sessions[0].token).toEqual(response.csrfToken);
       expect(dek).toEqual(response.dek);
       expect(encNewDek).toEqual(response.encNewDek);
       secondDone;
@@ -295,7 +296,7 @@ describe("registerPasskey", () => {
       passkey: passkey.pubKey,
       challenge: "",
       updatedAt: new Timestamp(utils.epoch(), 0),
-      csrfToken: "",
+      sessions: [],
     };
     jest
       .spyOn(adb, "getAuth")
@@ -303,8 +304,8 @@ describe("registerPasskey", () => {
 
     jest
       .spyOn(adb, "postAuth")
-      .mockImplementation((_uid: string, csrfToken: string) => {
-        authDb.csrfToken = csrfToken;
+      .mockImplementation((_uid: string, sessions: adb.Session[]) => {
+        authDb.sessions = sessions;
         return Promise.resolve();
       });
 
