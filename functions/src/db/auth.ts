@@ -5,10 +5,15 @@ import * as functions from "firebase-functions";
 
 const secrets = functions.config().doppler || {};
 
+export interface Session {
+  token: string;
+  issuedAt: Timestamp;
+}
+
 export interface Auth {
   passkey: Passkey;
   challenge: string | null;
-  csrfToken: string | null;
+  sessions: Session[];
   updatedAt: Timestamp;
 }
 
@@ -30,25 +35,14 @@ export async function preAuth(address: string, challenge: string) {
     });
 }
 
-export async function postAuth(address: string, csrfToken: string) {
+export async function postAuth(address: string, sessions: Session[]) {
   await firestore()
     .collection("auth")
     .doc(address)
     .update({
       challenge: null,
       updatedAt: new Timestamp(epoch(), 0),
-      csrfToken,
-    });
-}
-
-export async function postLogout(address: string) {
-  await firestore()
-    .collection("auth")
-    .doc(address)
-    .update({
-      challenge: null,
-      csrfToken: null,
-      updatedAt: new Timestamp(epoch(), 0),
+      sessions,
     });
 }
 
@@ -62,7 +56,7 @@ export async function registerUser(
     factory: string,
     operator: string,
     metadata: string,
-    invitationCode: string
+    invitationCode: string,
   }
 ) {
   const db = firestore();
@@ -97,7 +91,7 @@ export async function registerUser(
     });
     t.set(authRef, {
       passkey: request.passkey,
-      csrfToken,
+      sessions: { token: csrfToken, issuedAt: Timestamp.now() },
       updatedAt: Timestamp.now(),
     });
     if (!skipInvitationCheck) {

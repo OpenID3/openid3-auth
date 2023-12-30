@@ -20,17 +20,12 @@ import {
   signAsymmetricRsa,
 } from "./gcloudKms";
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
-import {
-  registerUser,
-  getAuth,
-  postAuth,
-  preAuth,
-  postLogout,
-} from "./db/auth";
+import { registerUser, getAuth, postAuth, preAuth, Session } from "./db/auth";
 import { getAccountAddress } from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
 import base64url from "base64url";
+import { Timestamp } from "firebase-admin/firestore";
 
 const secrets = functions.config().doppler || {};
 const SESSION_TTL = 60 * 60 * 24 * 5; // valid for 5 days
@@ -73,12 +68,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         const nameHash = genNameHash(req.body.username);
         const csrfToken = crypto.randomBytes(32).toString("hex");
         const [, encDek, token] = await Promise.all([
-          registerUser(
-            nameHash,
-            address,
-            csrfToken,
-            req.body,
-          ),
+          registerUser(nameHash, address, csrfToken, req.body),
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
           // we reuse csrfToken as session id since it's unique per session
           signJwt(address, csrfToken, SESSION_TTL),
@@ -171,6 +161,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
         if (auth.updatedAt.seconds + 180 < epoch()) {
           throw new ServerError(403, "invalid challenge");
         }
+        const sessions = auth.sessions ?? [];
         const challenge = crypto
           .createHash("sha256")
           .update(
@@ -196,7 +187,10 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
         const csrfToken = crypto.randomBytes(32).toString("hex");
         const aad = toBuffer(address);
         const [, dek, encNewDek, token] = await Promise.all([
-          postAuth(address, csrfToken),
+          postAuth(address, [
+            ...cleanUpSession(sessions),
+            { token: csrfToken, issuedAt: Timestamp.now() },
+          ]),
           decryptWithSymmKey(req.body.encDek, aad),
           encryptWithSymmKey(req.body.newDek, aad),
           // we reuse csrfToken as session id since it's unique per session
@@ -239,9 +233,12 @@ export const logout = functions.https.onRequest((req, res) => {
           return;
         }
         const claims = await verifyJwt(session);
-        await postLogout(claims.uid);
-        res.clearCookie("__session");
-        res.status(200).json({ success: true });
+        const auth = await getAuth(claims.uid);
+        if (auth) {
+          const sessions = cleanUpSession(auth.sessions, claims.session);
+          await postAuth(claims.uid, sessions);
+        }
+        res.clearCookie("__session").status(200).json({ success: true });
       } catch (err: unknown) {
         handleError(res, err);
       }
@@ -275,9 +272,8 @@ export const getDeks = functions.https.onRequest((req, res) => {
         const claims = await verifyJwt(session);
         const auth = await getAuth(claims.uid);
         if (
-          !auth?.csrfToken ||
-          req.body.csrfToken != auth.csrfToken ||
-          claims.session != auth.csrfToken
+          req.body.csrfToken != claims.session &&
+          auth?.sessions.find((s) => s.token = claims.session)
         ) {
           throw new ServerError(401, "Access denied");
         }
@@ -420,4 +416,10 @@ const verifyJwt = async (
     uid: parsedPayload.sub,
     session: parsedPayload.session,
   };
+};
+
+const cleanUpSession = (sessions: Session[], toRemove?: string) => {
+  return sessions.filter(
+    (s) => s.issuedAt.seconds + SESSION_TTL > epoch() && s.token !== toRemove
+  );
 };
