@@ -91,7 +91,7 @@ export async function registerUser(
     });
     t.set(authRef, {
       passkey: request.passkey,
-      sessions: { token: csrfToken, issuedAt: Timestamp.now() },
+      sessions: [{ token: csrfToken, issuedAt: Timestamp.now() }],
       updatedAt: Timestamp.now(),
     });
     if (!skipInvitationCheck) {
