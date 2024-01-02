@@ -21,7 +21,7 @@ app.get("/.well-known/nostr.json", async (req, res) => {
       return res.status(200).json({
         names: { [name]: normalized },
         relays: {
-          [normalized]: ["https://relay.hexlink.io"]
+          [normalized]: [process.env.DEFAULT_RELAY]
         },
       });
     } else {
