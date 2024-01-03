@@ -34,35 +34,51 @@ const getDataFromFirestore = async (collection: string, doc: string) => {
 const resolveUid = async (uid: string) => {
   const result = await getDataFromFirestore("mns", uid);
   if (result) {
-    return ethers.getAddress(formatHex(result.fields.address.stringValue)) as HexString;
+    return ethers.getAddress(
+      formatHex(result.fields.address.stringValue)
+    ) as HexString;
   }
 };
 
-const getMetadata = async (address: HexString): Promise<HexString | undefined> => {
+const getMetadata = async (
+  address: HexString
+): Promise<HexString | undefined> => {
   const data = await getDataFromFirestore("users", address);
   if (data) {
     return formatHex(data.fields.metadata.stringValue);
   }
 };
 
-export const getPubkey = async (name: string): Promise<HexString | undefined> => {
-    const uid = genNameHash(name);
-    const address = await resolveUid(uid);
-    if (!address) {
-        throw new HexlinkError(404, "name not registered");
-    }
-    const redis = await RedisService.getInstance();
-    const pubkey = await redis.get(address);
-    if (pubkey) {
-        return pubkey as HexString;
-    } else {
-        return getMetadata(address);
-    }
-}
+export const getPubkeyFromName = async (
+  name: string
+): Promise<HexString | undefined> => {
+  const uid = genNameHash(name);
+  const address = await resolveUid(uid);
+  if (!address) {
+    throw new HexlinkError(404, "name not registered");
+  }
+  return getPubkeyFromAddress(address);
+};
+
+export const getPubkeyFromAddress = async (
+  address: string
+): Promise<HexString | undefined> => {
+  if (!ethers.isAddress(address)) {
+    throw new HexlinkError(400, "invalid address");
+  }
+  const normalized = ethers.getAddress(address) as HexString;
+  const redis = await RedisService.getInstance();
+  const pubkey = await redis.get(address);
+  if (pubkey) {
+    return pubkey as HexString;
+  } else {
+    return getMetadata(normalized);
+  }
+};
 
 export const stripHex = (value: string): string => {
   if (value.startsWith("0x")) {
     return value.slice(2);
   }
   return value;
-}
+};
