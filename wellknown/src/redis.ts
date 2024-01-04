@@ -24,7 +24,7 @@ export class RedisService {
       return this.client.get(key);
     }
   
-    public set(key: string, value: string) {
+    public set(key: string, value: any) {
       return this.client.set(key, value);
     }
 

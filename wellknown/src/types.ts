@@ -21,3 +21,9 @@ export class HexlinkError extends Error {
     this.code = code;
   }
 }
+
+export interface Passkey {
+  id: string;
+  x: HexString;
+  y: HexString;
+}

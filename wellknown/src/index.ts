@@ -37,7 +37,7 @@ app.get("/.well-known/nostr.json", async (req, res) => {
   }
 });
 
-app.get("/api/pubkey", async (req, res) => {
+app.get("/api/nostrkey", async (req, res) => {
   try {
     let pubkey: HexString | undefined;
     if (req.query.name) {
@@ -61,6 +61,9 @@ app.get("/api/pubkey", async (req, res) => {
       return res.status(500).json({ message: "internal server error" });
     }
   }
+});
+
+app.get("/api/passkey", async (req, res) => {
 });
 
 app.get("*", function (_req, res) {
