@@ -1,13 +1,11 @@
-import SturdyWebSocket from "sturdy-websocket";
 import { ethers } from "ethers";
 import {
   AccountManager__factory,
-  AccountManager,
   PasskeyAdmin__factory,
 } from "@openid3/contracts";
 import { RedisService } from "./redis";
-import WebSocket from "ws";
 import { LogResponse, Passkey } from "./types";
+import { METADATA_TOPIC_HASH, PASSKEY_TOPIC_HASH, genKey } from "./ns";
 
 const SEPOLIA = {
   name: "sepolia",
@@ -17,11 +15,9 @@ const SCAN_SERVICE_URL = "https://api-sepolia.etherscan.io/api";
 
 const manager = process.env.CONTRACT_V0_0_8_ACCOUNT_MANAGER!;
 const managerIface = AccountManager__factory.createInterface();
-const METADATA_TOPIC_HASH = managerIface.getEvent("NewMetadata").topicHash;
 
 const admin = process.env.CONTRACT_V0_0_8_PASSKEY_ADMIN!;
 const adminIface = PasskeyAdmin__factory.createInterface();
-const PASSKEY_TOPIC_HASH = adminIface.getEvent("PasskeySet").topicHash;
 
 const provider = new ethers.InfuraProvider(
   SEPOLIA.chainId,
@@ -33,7 +29,7 @@ function genUrl(query: Record<string, string>) {
   return `${SCAN_SERVICE_URL}?${params.toString()}`;
 }
 
-async function queryAllMetadataEvents(
+async function indexNewMetadataEvent(
   query: Record<string, string>,
   redis: RedisService
 ) {
@@ -44,6 +40,7 @@ async function queryAllMetadataEvents(
   }
   const logs = result.result as LogResponse[];
   if (logs.length === 0) {
+    console.log("No NewMetadata event found.");
     return;
   }
   const events: Array<[string, string]> = logs.map((log) => {
@@ -54,58 +51,20 @@ async function queryAllMetadataEvents(
       " <-> ",
       parsed!.args.metadata
     );
-    return [parsed!.args.account, parsed!.args.metadata];
+    return [
+      genKey(parsed!.args.account, METADATA_TOPIC_HASH),
+      parsed!.args.metadata,
+    ];
   });
   await redis.mset(events);
   if (logs.length === Number(query.offset)) {
     const nextPage = Number(query.page) + 1;
     query.page = nextPage.toString();
-    await queryAllMetadataEvents(query, redis);
+    await indexNewMetadataEvent(query, redis);
   }
 }
 
-const subscribeMetadataEvent = async (
-  wssProvider: ethers.WebSocketProvider
-) => {
-  const currentBlock = await provider.getBlockNumber();
-  console.log("current block is ", currentBlock);
-  const redis = await RedisService.getInstance();
-  console.log("restoring historical events...");
-  await queryAllMetadataEvents(
-    {
-      module: "logs",
-      action: "getLogs",
-      apikey: process.env.ETHERSCAN_API_KEY!,
-      page: "1",
-      offset: "1000",
-      fromBlock: "0",
-      toBlock: Number(currentBlock).toString(),
-      address: manager,
-      topic0: METADATA_TOPIC_HASH,
-    },
-    redis
-  );
-  console.log("all historical events restored.");
-  console.log("adding listener...");
-  wssProvider.on(
-    {
-      address: manager,
-      topics: [METADATA_TOPIC_HASH],
-    },
-    async (log) => {
-      const parsed = managerIface.parseLog(log);
-      console.log(
-        "NewMetadata ======> ",
-        parsed!.args.account,
-        " <-> ",
-        parsed!.args.metadata
-      );
-      await redis.set(parsed!.args.account, parsed!.args.metadata);
-    }
-  );
-};
-
-async function queryAllPasskeySetEvent(
+async function indexAllPasskeySetEvent(
   query: Record<string, string>,
   redis: RedisService
 ) {
@@ -116,13 +75,14 @@ async function queryAllPasskeySetEvent(
   }
   const logs = result.result as LogResponse[];
   if (logs.length === 0) {
+    console.log("No PasskeySet event found.");
     return;
   }
   const events: Array<[string, string]> = logs.map((log) => {
     const parsed = adminIface.parseLog(log);
     const passkey = {
-      x: parsed?.args.pubKey.pubKeyX,
-      y: parsed?.args.pubKey.pubKeyY,
+      x: parsed?.args.pubKey.pubKeyX.toString(16),
+      y: parsed?.args.pubKey.pubKeyY.toString(16),
       id: parsed?.args.passkeyId,
     } as Passkey;
     console.log(
@@ -131,96 +91,64 @@ async function queryAllPasskeySetEvent(
       " <-> ",
       JSON.stringify(passkey)
     );
-    return [parsed!.args.account, JSON.stringify(passkey)];
+    return [
+      genKey(parsed!.args.account, PASSKEY_TOPIC_HASH),
+      JSON.stringify(passkey),
+    ];
   });
   await redis.mset(events);
   if (logs.length === Number(query.offset)) {
     const nextPage = Number(query.page) + 1;
     query.page = nextPage.toString();
-    await queryAllMetadataEvents(query, redis);
+    await indexAllPasskeySetEvent(query, redis);
   }
 }
 
-export const subscribePasskeyEvent = async (
-  wssProvider: ethers.WebSocketProvider
-) => {
-  const currentBlock = await provider.getBlockNumber();
-  console.log("current block is ", currentBlock);
+const indexEvents = async () => {
   const redis = await RedisService.getInstance();
-  console.log("restoring historical events...");
-  await queryAllPasskeySetEvent(
-    {
-      module: "logs",
-      action: "getLogs",
-      apikey: process.env.ETHERSCAN_API_KEY!,
-      page: "1",
-      offset: "1000",
-      fromBlock: "0",
-      toBlock: Number(currentBlock).toString(),
-      address: admin,
-      topic0: PASSKEY_TOPIC_HASH,
-    },
-    redis
-  );
-  console.log("all historical events restored.");
-  console.log("adding listener...");
-  wssProvider.on(
-    {
-      address: admin,
-      topics: [PASSKEY_TOPIC_HASH],
-    },
-    async (log) => {
-      const parsed = adminIface.parseLog(log);
-      const passkey = {
-        x: parsed?.args.pubKey.pubKeyX,
-        y: parsed?.args.pubKey.pubKeyY,
-        id: parsed?.args.passkeyId,
-      } as Passkey;
-      console.log(
-        "PasskeySet ======> ",
-        parsed!.args.account,
-        " <-> ",
-        JSON.stringify(passkey)
-      );
-      await redis.set(parsed!.args.account, JSON.stringify(passkey));
-    }
-  );
-};
-
-const createWebSocket = () => {
-  const wssUrl = `wss://${SEPOLIA.name}.infura.io/ws/v3/${process.env.INFURA_API_KEY}`;
-  return new SturdyWebSocket(wssUrl, {
-    connectTimeout: 5000,
-    maxReconnectAttempts: 5,
-    reconnectBackoffFactor: 1.3,
-    wsConstructor: WebSocket,
-  });
-};
-
-const ws = createWebSocket();
-const wssProvider = new ethers.WebSocketProvider(ws, SEPOLIA);
-
-ws.onopen = async () => {
-  console.log("infura ws opened");
-  wssProvider.removeAllListeners();
-  console.log("subscribing...");
+  const fromBlock = (await redis.get("lastBlock")) ?? "0";
+  const toBlock = (await provider.getBlockNumber()).toString();
+  if (Number(fromBlock) >= Number(toBlock)) {
+    return;
+  }
+  console.log("Indexing from block ", fromBlock, " to block ", toBlock);
+  const queryBase = {
+    module: "logs",
+    action: "getLogs",
+    apikey: process.env.ETHERSCAN_API_KEY!,
+    page: "1",
+    offset: "1000",
+    fromBlock,
+    toBlock,
+  };
   await Promise.all([
-    subscribeMetadataEvent(wssProvider),
-    subscribePasskeyEvent(wssProvider),
+    indexAllPasskeySetEvent(
+      {
+        ...queryBase,
+        address: admin,
+        topic0: PASSKEY_TOPIC_HASH,
+      },
+      redis
+    ),
+    indexNewMetadataEvent(
+      {
+        ...queryBase,
+        address: manager,
+        topic0: METADATA_TOPIC_HASH,
+      },
+      redis
+    ),
   ]);
+  await redis.set("lastBlock", toBlock);
 };
 
-ws.onreopen = async () => {
-  console.log("infura ws reopened");
-  wssProvider.removeAllListeners();
-  console.log("resubscribing...");
-  await Promise.all([
-    subscribeMetadataEvent(wssProvider),
-    subscribePasskeyEvent(wssProvider),
-  ]);
+const indexEventsNoThrow = async () => {
+  try {
+    await indexEvents();
+  } catch (err) {
+    console.log("failed to index events: ", err);
+  }
 };
 
-ws.onclose = async () => {
-  console.log("infura ws closed");
-  wssProvider.removeAllListeners();
-};
+// run every 30s
+setInterval(indexEventsNoThrow, 30000);

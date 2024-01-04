@@ -1,7 +1,18 @@
 import { ethers } from "ethers";
-import { HexString, HexlinkError } from "./types";
+import { HexString, HexlinkError, Passkey } from "./types";
 import { genNameHash } from "./name";
 import { RedisService } from "./redis";
+import {
+  AccountManager__factory,
+  PasskeyAdmin__factory,
+} from "@openid3/contracts";
+
+export const genKey = (account: string, event: string) => `${event}:${account}`;
+
+export const METADATA_TOPIC_HASH =
+  AccountManager__factory.createInterface().getEvent("NewMetadata").topicHash;
+export const PASSKEY_TOPIC_HASH =
+  PasskeyAdmin__factory.createInterface().getEvent("PasskeySet").topicHash;
 
 function formatHex(hex: string): HexString {
   if (hex.startsWith("0x")) {
@@ -49,6 +60,19 @@ const getMetadata = async (
   }
 };
 
+const getPasskey = async (
+  address: HexString
+): Promise<Passkey | undefined> => {
+  const data = await getDataFromFirestore("users", address);
+  if (data) {
+    return {
+      x: formatHex(data.fields.passkey.mapValue.fields.x.stringValue),
+      y: formatHex(data.fields.passkey.mapValue.fields.y.stringValue),
+      id: data.fields.passkey.mapValue.fields.id.stringValue as string,
+    } as Passkey;
+  }
+};
+
 export const getPubkeyFromName = async (
   name: string
 ): Promise<HexString | undefined> => {
@@ -68,11 +92,43 @@ export const getPubkeyFromAddress = async (
   }
   const normalized = ethers.getAddress(address) as HexString;
   const redis = await RedisService.getInstance();
-  const pubkey = await redis.get(address);
+  const pubkey = await redis.get(genKey(normalized, METADATA_TOPIC_HASH));
   if (pubkey) {
     return pubkey as HexString;
   } else {
     return getMetadata(normalized);
+  }
+};
+
+export const getPasskeyFromName = async (
+  name: string
+): Promise<Passkey | undefined> => {
+  const uid = genNameHash(name);
+  const address = await resolveUid(uid);
+  if (!address) {
+    throw new HexlinkError(404, "name not registered");
+  }
+  return getPasskeyFromAddress(address);
+};
+
+export const getPasskeyFromAddress = async (
+  address: string
+): Promise<Passkey | undefined> => {
+  if (!ethers.isAddress(address)) {
+    throw new HexlinkError(400, "invalid address");
+  }
+  const normalized = ethers.getAddress(address) as HexString;
+  const redis = await RedisService.getInstance();
+  const passkeyStr = await redis.get(genKey(normalized, PASSKEY_TOPIC_HASH));
+  if (passkeyStr) {
+    const passkey = JSON.parse(passkeyStr) as Passkey;
+    return {
+      x: formatHex(passkey.x),
+      y: formatHex(passkey.y),
+      id: passkey.id,
+    } as Passkey;
+  } else {
+    return getPasskey(normalized);
   }
 };
 

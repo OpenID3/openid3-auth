@@ -1,7 +1,7 @@
 import cors from "cors";
 import express, { Application } from "express";
-import { getPubkeyFromName, getPubkeyFromAddress, stripHex } from "./ns";
-import { HexString, HexlinkError } from "./types";
+import { getPubkeyFromName, getPubkeyFromAddress, stripHex, getPasskeyFromAddress, getPasskeyFromName } from "./ns";
+import { HexString, HexlinkError, Passkey } from "./types";
 
 const app: Application = express();
 const port = Number(process.env.PORT) || 8000;
@@ -37,7 +37,7 @@ app.get("/.well-known/nostr.json", async (req, res) => {
   }
 });
 
-app.get("/api/nostrkey", async (req, res) => {
+app.get("/api/account/nostrkey", async (req, res) => {
   try {
     let pubkey: HexString | undefined;
     if (req.query.name) {
@@ -63,7 +63,29 @@ app.get("/api/nostrkey", async (req, res) => {
   }
 });
 
-app.get("/api/passkey", async (req, res) => {
+app.get("/api/account/passkey", async (req, res) => {
+  try {
+    let passkey: Passkey | undefined;
+    if (req.query.name) {
+      passkey = await getPasskeyFromName(req.query.name as string);
+    } else if (req.query.address) {
+      passkey = await getPasskeyFromAddress(req.query.address as string);
+    } else {
+      throw new HexlinkError(400, "name or address is required");
+    }
+    if (passkey) {
+      return res.status(200).json({ passkey });
+    } else {
+      return res.status(404).send("Not found");
+    }
+  } catch (err: unknown) {
+    if (err instanceof HexlinkError) {
+      return res.status(err.code).json({ message: err.message });
+    } else {
+      console.log("Error: ", err);
+      return res.status(500).json({ message: "internal server error" });
+    }
+  }
 });
 
 app.get("*", function (_req, res) {
