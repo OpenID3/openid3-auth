@@ -30,7 +30,7 @@ export function buildPasskeyAdminData(passkey: Passkey) {
   );
   return ethers.solidityPacked(
     ["address", "bytes"],
-    [secrets.CONTRACT_V0_0_8_PASSSKEY_ADMIN!, adminData]
+    [secrets.CONTRACT_V0_0_8_PASSKEY_ADMIN!, adminData]
   );
 }
 
