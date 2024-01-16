@@ -4,7 +4,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 pm2 start $SCRIPT_DIR/server.sh
 
-pm2 start $SCRIPT_DIR/watch.sh
+pm2 start $SCRIPT_DIR/indexer.sh
 
 cd $SCRIPT_DIR/../functions
 

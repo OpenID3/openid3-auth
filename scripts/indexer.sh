@@ -2,12 +2,12 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-cd $SCRIPT_DIR/../wellknown
+cd $SCRIPT_DIR/../indexer
 
-echo "wellknown: installing dependencies..."
+echo "indexer: installing dependencies..."
 pnpm i
 
-echo "wellknown: compiling..."
+echo "indexer: compiling..."
 tsc
 
 if [ -z "${ENV}" ]; then
@@ -16,4 +16,4 @@ else
     env=${ENV}
 fi
 
-doppler run --config $env -- node ./dist/watch.js
+doppler run --config $env -- node ./dist/indexer.js
