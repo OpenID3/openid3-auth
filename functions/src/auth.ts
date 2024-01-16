@@ -26,6 +26,7 @@ import * as asn1 from "asn1.js";
 import BN from "bn.js";
 import base64url from "base64url";
 import { Timestamp } from "firebase-admin/firestore";
+import * as admin from "firebase-admin";
 
 const secrets = functions.config().doppler || {};
 const SESSION_TTL = 60 * 60 * 24 * 5; // valid for 5 days
@@ -67,11 +68,12 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         const address = await getAccountAddress(req.body);
         const nameHash = genNameHash(req.body.username);
         const csrfToken = crypto.randomBytes(32).toString("hex");
-        const [, encDek, token] = await Promise.all([
+        const [, encDek, token, customToken] = await Promise.all([
           registerUser(nameHash, address, csrfToken, req.body),
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
           // we reuse csrfToken as session id since it's unique per session
           signJwt(address, csrfToken, SESSION_TTL),
+          admin.auth().createCustomToken(address),
         ]);
         res
           .cookie("__session", token, {
@@ -82,7 +84,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           })
           .appendHeader("Cache-Control", "private")
           .status(200)
-          .json({ address, csrfToken, encDek });
+          .json({ address, csrfToken, encDek, customToken });
       } catch (err: unknown) {
         handleError(res, err);
       }
@@ -186,7 +188,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
         );
         const csrfToken = crypto.randomBytes(32).toString("hex");
         const aad = toBuffer(address);
-        const [, dek, encNewDek, token] = await Promise.all([
+        const [, dek, encNewDek, token, customToken] = await Promise.all([
           postAuth(address, [
             ...cleanUpSession(sessions),
             { token: csrfToken, issuedAt: Timestamp.now() },
@@ -195,6 +197,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           encryptWithSymmKey(req.body.newDek, aad),
           // we reuse csrfToken as session id since it's unique per session
           signJwt(address, csrfToken, SESSION_TTL),
+          admin.auth().createCustomToken(address),
         ]);
         res
           .cookie("__session", token, {
@@ -205,7 +208,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           })
           .appendHeader("Cache-Control", "private")
           .status(200)
-          .json({ csrfToken, dek, encNewDek });
+          .json({ csrfToken, dek, encNewDek, customToken });
       } catch (err: unknown) {
         handleError(res, err);
       }
