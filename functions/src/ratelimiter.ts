@@ -15,11 +15,16 @@ export async function getChallengeRateLimit(ip: string) {
   return await rateLimiter("get_challenge", `ip_${ip}`, 60, 30);
 }
 
+export async function verifyPinRateLimit(uid: string, verifyOnly: boolean) {
+  return await rateLimiter("verify_pin", `uid_${uid}`, 5, 60, verifyOnly);
+}
+
 export const rateLimiter = async (
   callName: string,
   rawId: string,
   windowInSec: number,
-  threshold: number
+  threshold: number,
+  verifyOnly: boolean = false,
 ): Promise<boolean> => {
   const callRef = txServiceRateDBRef + callName;
   const ref = admin.database().ref(callRef);
@@ -34,7 +39,9 @@ export const rateLimiter = async (
     );
 
     if (!tsMap.has(timestampKey)) {
-      addRecord(id, [now], ref);
+      if (!verifyOnly) {
+        addRecord(id, [now], ref);
+      }
       return false;
     }
 
@@ -42,11 +49,15 @@ export const rateLimiter = async (
     const tsThre = now - 1000 * windowInSec;
     const tsInWindow = tsList.filter((ts) => ts > tsThre);
     tsInWindow.push(now);
-    addRecord(id, tsInWindow, ref);
+    if (!verifyOnly) {
+      addRecord(id, tsInWindow, ref);
+    }
 
     return tsInWindow.length > threshold;
   } else {
-    addRecord(id, [now], ref);
+    if (!verifyOnly) {
+      addRecord(id, [now], ref);
+    }
     return false;
   }
 };
