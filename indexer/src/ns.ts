@@ -6,7 +6,6 @@ import {
   AccountManager__factory,
   PasskeyAdmin__factory,
 } from "@openid3/contracts";
-import { coll } from "./firebase";
 
 export const genKey = (account: string, event: string) => `${event}:${account}`;
 
@@ -23,35 +22,55 @@ function formatHex(hex: string): HexString {
   }
 }
 
+const buildUrl = (dev: boolean) => {
+  if (dev) {
+    return `http://127.0.0.1:5002/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+  } else {
+    return `https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+  }
+};
+
+const getDataFromFirestore = async (collection: string, doc: string) => {
+  const urlPrefix = buildUrl(process.env.ENV === "dev");
+  collection = collection + "_" + process.env.ENV;
+  const resp = await fetch(`${urlPrefix}${collection}/${doc}`);
+  if (resp.status === 404) {
+    return undefined;
+  }
+  if (resp.status === 200) {
+    return await resp.json();
+  }
+  throw new Error("Failed to fetch data from firestore");
+};
+
 const resolveUid = async (uid: string) => {
-  const result = await coll("mns").doc(uid).get();
-  if (result && result.exists) {
-    const mns = result.data() as {address: string};
-    return ethers.getAddress(mns.address);
+  const result = await getDataFromFirestore("mns", uid);
+  if (result) {
+    return ethers.getAddress(
+      formatHex(result.fields.address.stringValue)
+    ) as HexString;
   }
 };
 
 const getMetadata = async (
   address: HexString
 ): Promise<HexString | undefined> => {
-  const result = await coll("users").doc(address).get()
-  if (result && result.exists) {
-    const user = result.data() as {metadata: string};
-    return formatHex(user.metadata);
+  const data = await getDataFromFirestore("users", address);
+  if (data) {
+    return formatHex(data.fields.metadata.stringValue);
   }
 };
 
 const getPasskey = async (
   address: HexString
 ): Promise<Passkey | undefined> => {
-  const result = await coll("users").doc(address).get();
-  if (result && result.exists) {
-    const user = result.data() as {passkey: Passkey};
+  const data = await getDataFromFirestore("users", address);
+  if (data) {
     return {
-      x: formatHex(user.passkey.x),
-      y: formatHex(user.passkey.y),
-      id: user.passkey.id,
-    }
+      x: formatHex(data.fields.passkey.mapValue.fields.x.stringValue),
+      y: formatHex(data.fields.passkey.mapValue.fields.y.stringValue),
+      id: data.fields.passkey.mapValue.fields.id.stringValue as string,
+    } as Passkey;
   }
 };
 
