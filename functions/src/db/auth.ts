@@ -89,7 +89,7 @@ export async function registerUser(
     });
     t.set(authRef, {
       passkey: request.passkey,
-      pin: request.pin,
+      pin: "",
       updatedAt: Timestamp.now(),
     });
     if (!skipInvitationCheck) {
