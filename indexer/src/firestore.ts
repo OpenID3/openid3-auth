@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { ServerError, epoch } from "./utils";
-import { db } from "./firebase";
+import { coll, db } from "./firebase";
 
 export interface Passkey {
   x: string; // pubKeyX
@@ -21,7 +21,7 @@ export interface Auth {
 }
 
 export async function getAuth(address: string): Promise<Auth | null> {
-  const result = await db.collection("auth").doc(address).get();
+  const result = await coll("auth").doc(address).get();
   if (result && result.exists) {
     return result.data() as Auth;
   }
@@ -29,8 +29,7 @@ export async function getAuth(address: string): Promise<Auth | null> {
 }
 
 export async function preAuth(address: string, challenge: string) {
-  await db
-    .collection("auth")
+  await coll("auth")
     .doc(address)
     .update({
       challenge: challenge,
@@ -39,8 +38,7 @@ export async function preAuth(address: string, challenge: string) {
 }
 
 export async function postAuth(address: string, sessions: Session[]) {
-  await db
-    .collection("auth")
+  await coll("auth")
     .doc(address)
     .update({
       challenge: null,
@@ -62,11 +60,11 @@ export async function registerUser(
     invitationCode: string,
   }
 ) {
-  const nsRef = db.collection("mns").doc(uid);
-  const userRef = db.collection("users").doc(address);
-  const authRef = db.collection("auth").doc(address);
+  const nsRef = coll("mns").doc(uid);
+  const userRef = coll("users").doc(address);
+  const authRef = coll("auth").doc(address);
   const skipInvitationCheck = process.env.SKIP_INVITATION_CHECK === "true";
-  const codeRef = db.collection("invitations").doc(request.invitationCode);
+  const codeRef = coll("invitations").doc(request.invitationCode);
   await db.runTransaction(async (t) => {
     const user = await t.get(nsRef);
     if (user && user.exists) {

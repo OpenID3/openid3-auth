@@ -8,3 +8,7 @@ admin.initializeApp({
 });
 
 export const db = admin.firestore();
+
+export const coll = (coll: string) => {
+  return db.collection(coll + "_" + process.env.ENV);
+}

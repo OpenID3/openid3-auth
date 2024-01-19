@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase-admin/firestore";
-import { Passkey, firestore } from "./utils";
+import { Passkey, coll } from "./utils";
 
 // use address as key for user
 export interface User {
@@ -12,7 +12,7 @@ export interface User {
 }
 
 export async function getUser(address: string): Promise<User | null> {
-  const result = await firestore().collection("users").doc(address).get();
+  const result = await coll("users").doc(address).get();
   if (result && result.exists) {
     return result.data() as User;
   }
@@ -20,7 +20,7 @@ export async function getUser(address: string): Promise<User | null> {
 }
 
 export async function userExist(address: string): Promise<boolean> {
-  const result = await firestore().collection("users").doc(address).get();
+  const result = await coll("users").doc(address).get();
   if (result && result.exists) {
     return true;
   }

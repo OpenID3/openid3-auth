@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase-admin/firestore";
-import { Passkey, firestore } from "./utils";
+import { Passkey, coll } from "./utils";
 import { ServerError, epoch } from "../utils";
 import * as functions from "firebase-functions";
 
@@ -13,7 +13,7 @@ export interface Auth {
 }
 
 export async function getAuth(address: string): Promise<Auth | null> {
-  const result = await firestore().collection("auth").doc(address).get();
+  const result = await coll("auth").doc(address).get();
   if (result && result.exists) {
     return result.data() as Auth;
   }
@@ -21,8 +21,7 @@ export async function getAuth(address: string): Promise<Auth | null> {
 }
 
 export async function preAuth(address: string, challenge: string) {
-  await firestore()
-    .collection("auth")
+  await coll("auth")
     .doc(address)
     .update({
       challenge: challenge,
@@ -31,8 +30,7 @@ export async function preAuth(address: string, challenge: string) {
 }
 
 export async function postAuth(address: string) {
-  await firestore()
-    .collection("auth")
+  await coll("auth")
     .doc(address)
     .update({
       challenge: null,
@@ -41,7 +39,7 @@ export async function postAuth(address: string) {
 }
 
 export async function setPin(address: string, newPin: string) {
-  await firestore().collection("auth").doc(address).update({
+  await coll("auth").doc(address).update({
     pin: newPin,
   });
 }
@@ -59,12 +57,11 @@ export async function registerUser(
     invitationCode: string;
   }
 ) {
-  const db = firestore();
-  const nsRef = db.collection("mns").doc(uid);
-  const userRef = db.collection("users").doc(address);
-  const authRef = db.collection("auth").doc(address);
+  const nsRef = coll("mns").doc(uid);
+  const userRef = coll("users").doc(address);
+  const authRef = coll("auth").doc(address);
   const skipInvitationCheck = secrets.SKIP_INVITATION_CHECK === "true";
-  const codeRef = db.collection("invitations").doc(request.invitationCode);
+  const codeRef = coll("invitations").doc(request.invitationCode);
   await db.runTransaction(async (t) => {
     const user = await t.get(nsRef);
     if (user && user.exists) {

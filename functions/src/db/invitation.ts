@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase-admin/firestore";
-import { firestore } from "./utils";
+import { coll, firestore } from "./utils";
 import { HexString } from "ethers/lib.commonjs/utils/data";
 
 export interface Invitation {
@@ -16,7 +16,7 @@ export async function genInvitationCodes(num: number): Promise<string[]> {
   for (let i = 0; i < num; i++) {
     const code = crypto.randomUUID();
     codes.push(code);
-    const codeRef = db.collection("invitations").doc(code);
+    const codeRef = coll("invitations").doc(code);
     batch.set(codeRef, { createdAt: Timestamp.now() });
   }
   await batch.commit();
