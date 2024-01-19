@@ -1,4 +1,3 @@
-import cors from "cors";
 import crypto from "crypto";
 import { secp256r1 } from "@noble/curves/p256";
 import { ethers } from "ethers";
@@ -74,7 +73,6 @@ export const registerUserWithPasskey = async (
       maxAge: SESSION_TTL * 1000,
       httpOnly: true,
       secure: true,
-      sameSite: "none",
     })
     .appendHeader("Cache-Control", "private")
     .status(200)
@@ -183,7 +181,6 @@ export const loginWithPasskey = async (
       maxAge: SESSION_TTL * 1000,
       httpOnly: true,
       secure: true,
-      sameSite: "none",
     })
     .appendHeader("Cache-Control", "private")
     .status(200)

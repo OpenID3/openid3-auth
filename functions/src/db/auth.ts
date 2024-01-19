@@ -1,5 +1,5 @@
 import { Timestamp } from "firebase-admin/firestore";
-import { Passkey, coll } from "./utils";
+import { Passkey, coll, firestore } from "./utils";
 import { ServerError, epoch } from "../utils";
 import * as functions from "firebase-functions";
 
@@ -57,6 +57,7 @@ export async function registerUser(
     invitationCode: string;
   }
 ) {
+  const db = firestore();
   const nsRef = coll("mns").doc(uid);
   const userRef = coll("users").doc(address);
   const authRef = coll("auth").doc(address);

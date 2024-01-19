@@ -74,14 +74,6 @@ app.get("/api/account/passkey", cors(), async (req, res) => {
   }
 });
 
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    await registerUserWithPasskey(req, res);
-  } catch (err: unknown) {
-    handleError(res, err);
-  }
-});
-
 app.get("*", function (_req, res) {
   return res.status(404).send("Path Not Supported");
 });
