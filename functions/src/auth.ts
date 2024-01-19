@@ -1,6 +1,5 @@
 import cors from "cors";
 import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
 import crypto from "crypto";
 import { secp256r1 } from "@noble/curves/p256";
 import { ethers } from "ethers";

@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions";
 import crypto from "crypto";
-import { ethers } from "ethers";
+import { namehash } from "viem";
 
 export const epoch = () => {
   return Math.floor(new Date().getTime() / 1000);
@@ -43,7 +43,7 @@ export const SUBDOMAIN_NOT_ALLOWED = "invalid username: subdomain not allowed";
 
 export const genNameHash = (username: string) => {
   username = validateUsername(username);
-  return nameHash(username);
+  return namehash(username);
 };
 
 // the name is with .mizu suffix
@@ -63,26 +63,6 @@ const validateUsername = (username: string) => {
     throw new ServerError(400, INVALID_USER_NAME_DISALLOWED_CHARACTERS);
   }
   return username;
-};
-
-const nameHash = (name: string): string => {
-  if (name == "") {
-    return ethers.ZeroHash;
-  }
-  const index = name.indexOf(".");
-  if (index === -1) {
-    return ethers.solidityPackedKeccak256(
-      ["bytes32", "bytes32"],
-      [nameHash(""), ethers.keccak256(ethers.toUtf8Bytes(name))]
-    );
-  } else {
-    const label = name.slice(0, index);
-    const remainder = name.slice(index + 1);
-    return ethers.solidityPackedKeccak256(
-      ["bytes32", "bytes32"],
-      [nameHash(remainder), ethers.keccak256(ethers.toUtf8Bytes(label))]
-    );
-  }
 };
 
 export const toBuffer = (data: string): Buffer => {
