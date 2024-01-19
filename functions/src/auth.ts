@@ -16,6 +16,8 @@ import {
 import {
   decryptWithSymmKey,
   encryptWithSymmKey,
+  getPublicKeyPemRsa,
+  signAsymmetricRsa,
 } from "./gcloudKms";
 import {
   getChallengeRateLimit,
@@ -26,8 +28,10 @@ import { registerUser, getAuth, postAuth, preAuth, setPin } from "./db/auth";
 import { getAccountAddress } from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
+import base64url from "base64url";
 
 const secrets = functions.config().doppler || {};
+const SESSION_TTL = 3600 * 24;
 
 /**
  * req.body: {
@@ -66,7 +70,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         const [, encDek, token] = await Promise.all([
           registerUser(nameHash, address, req.body),
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
-          admin.auth().createCustomToken(address),
+          signJwt(address, SESSION_TTL),
         ]);
         res.status(200).json({ token, address, encDek });
       } catch (err: unknown) {
@@ -173,7 +177,7 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
           postAuth(address),
           decryptWithSymmKey(req.body.encDek, aad),
           encryptWithSymmKey(req.body.newDek, aad),
-          admin.auth().createCustomToken(address),
+          signJwt(address, SESSION_TTL),
         ]);
         res.status(200).json({ token, dek, encNewDek });
       } catch (err: unknown) {
@@ -182,7 +186,6 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
     }
   );
 });
-
 
 /**
  * req.body: {
@@ -244,7 +247,7 @@ export const getDeks = functions.https.onRequest((req, res) => {
 
 /**
  * req.body: {
-*    pin: string,
+ *    pin: string,
  *   encDek: string, // to decrypt
  *   newDek?: string, // to encrypt
  * }
@@ -357,8 +360,7 @@ const verifyIdToken = async (req: functions.https.Request) => {
   if (!token) {
     throw new ServerError(401, "UNAUTHORIZED REQUEST");
   }
-  const decoded = await admin.auth().verifyIdToken(token);
-  return decoded.uid;
+  return verifyJwt(token);
 };
 
 const authenticateWithPin = async (
@@ -437,4 +439,57 @@ const validatePasskeySignature = (
   ) {
     throw new ServerError(400, "invalid signature");
   }
+};
+
+const signJwt = async (address: string, ttl: number): Promise<string> => {
+  const header = base64url(
+    JSON.stringify({
+      alg: "RS256",
+      typ: "JWT",
+    })
+  );
+  const payload = base64url(
+    JSON.stringify({
+      sub: address,
+      iss: secrets.REACT_APP_DOMAIN,
+      aud: secrets.REACT_APP_DOMAIN,
+      iat: epoch(),
+      exp: epoch() + ttl,
+    })
+  );
+  const signature = await signAsymmetricRsa(
+    Buffer.from(`${header}.${payload}`)
+  );
+  return `${header}.${payload}.${base64url.encode(signature)}`;
+};
+
+const verifyJwt = async (token: string) => {
+  const jwtPubPem = await getPublicKeyPemRsa();
+  const [header, payload, signature] = token.split(".");
+  const signatureBuffer = Buffer.from(signature, "base64url");
+  const verify = crypto.createVerify("RSA-SHA256");
+  verify.update(`${header}.${payload}`);
+  if (
+    !verify.verify(
+      { key: jwtPubPem, padding: crypto.constants.RSA_PKCS1_PADDING },
+      signatureBuffer
+    )
+  ) {
+    throw new ServerError(401, "invalid jwt signature");
+  }
+  const parsedHeader = JSON.parse(base64url.decode(header));
+  if (parsedHeader.typ !== "JWT" || parsedHeader.alg !== "RS256") {
+    throw new ServerError(401, "invalid jwt header");
+  }
+  const parsedPayload = JSON.parse(base64url.decode(payload));
+  if (parsedPayload.exp < epoch()) {
+    throw new ServerError(401, "token expired");
+  }
+  if (
+    parsedPayload.iss !== secrets.REACT_APP_DOMAIN ||
+    parsedPayload.sub === undefined
+  ) {
+    throw new ServerError(401, "invalid jwt payload");
+  }
+  return parsedPayload.sub as string;
 };
