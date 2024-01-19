@@ -41,9 +41,6 @@ const secrets = functions.config().doppler || {};
  *    x: string,
  *    y: string,
  *  },
- *  clientDataJson: string,
- *  authData: string, // hex
- *  signature: string, // hex
  *  dek: string,
  *  invitationCode: string,
  * }
@@ -71,7 +68,7 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
           admin.auth().createCustomToken(address),
         ]);
-        res.status(200).json({ address, token, encDek });
+        res.status(200).json({ token, address, encDek });
       } catch (err: unknown) {
         handleError(res, err);
       }
@@ -186,9 +183,12 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
   );
 });
 
+
 /**
  * req.body: {
- *   pin: string,
+ *   clientDataJson: string,
+ *   authData: string, // hex
+ *   signature: string, // hex
  *   encDek: string, // to decrypt
  *   newDek?: string, // to encrypt
  * }
@@ -199,6 +199,62 @@ export const loginWithPasskey = functions.https.onRequest((req, res) => {
  * }
  */
 export const getDeks = functions.https.onRequest((req, res) => {
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      try {
+        const uid = await verifyIdToken(req);
+        const auth = await getAuth(uid);
+        if (!auth) {
+          throw new ServerError(404, "User not found");
+        }
+        const challenge = crypto
+          .createHash("sha256")
+          .update(
+            Buffer.concat([
+              Buffer.from("getDeks", "utf-8"), // action
+              Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
+              toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
+            ])
+          )
+          .digest("base64");
+        validatePasskeySignature(
+          req.body.clientDataJson,
+          [
+            ["challenge", challenge],
+            ["origin", secrets.REACT_APP_ORIGIN],
+          ],
+          req.body.authData,
+          req.body.signature,
+          auth.passkey
+        );
+        const aad = toBuffer(uid);
+        const [dek, encNewDek] = await Promise.all([
+          decryptWithSymmKey(req.body.encDek, aad),
+          encryptWithSymmKey(req.body.newDek, aad),
+        ]);
+        res.status(200).json({ dek, encNewDek });
+      } catch (err: unknown) {
+        handleError(res, err);
+      }
+    }
+  );
+});
+
+/**
+ * req.body: {
+*    pin: string,
+ *   encDek: string, // to decrypt
+ *   newDek?: string, // to encrypt
+ * }
+ *
+ * res: {
+ *   dek: string, // decrypted
+ *   encNewDek?: string, // encrypted
+ * }
+ */
+export const getDeksWithPin = functions.https.onRequest((req, res) => {
   cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
     req,
     res,

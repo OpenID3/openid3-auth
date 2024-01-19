@@ -12,6 +12,7 @@ exports.registerUserWithPasskey = auth.registerUserWithPasskey;
 exports.getPasskeyChallenge = auth.getPasskeyChallenge;
 exports.loginWithPasskey = auth.loginWithPasskey;
 exports.getDeks = auth.getDeks;
+exports.getDeksWithPin = auth.getDeksWithPin;
 exports.updatePin = auth.updatePin;
 exports.resetPin = auth.resetPin;
 
