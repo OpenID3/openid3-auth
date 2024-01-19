@@ -140,7 +140,7 @@ const getAsymmKeyName = () => {
 const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
   const sign = crypto.createSign("RSA-SHA256");
   const key = {
-    key: secrets.JWT_SIGNER_DEV_PRIVATE_KEY,
+    key: process.env.JWT_SIGNER_DEV_PRIVATE_KEY!,
     padding: crypto.constants.RSA_PKCS1_PADDING,
   };
   sign.update(digestBuffer);
@@ -148,7 +148,7 @@ const signAsymmetricRsaWithDevKey = (digestBuffer: Buffer) => {
 };
 
 export const signAsymmetricRsa = async (digestBuffer: Buffer) => {
-  if (secrets.ENV === "dev") {
+  if (process.env.ENV === "dev") {
     return signAsymmetricRsaWithDevKey(digestBuffer);
   }
   const digest = crypto.createHash("sha256").update(digestBuffer).digest();
@@ -183,7 +183,7 @@ export const signAsymmetricRsa = async (digestBuffer: Buffer) => {
 
 export const getPublicKeyPemRsa = async () => {
   if (process.env.ENV === "dev") {
-    return process.env.JWT_SIGNER_DEV_PUB_PEM;
+    return process.env.JWT_SIGNER_DEV_PUB_PEM!;
   }
   const versionName = getAsymmKeyName();
   const [publicKey] = await client.getPublicKey({
