@@ -55,7 +55,7 @@ export const getNostrInfoFromName = async (
 const getUndeployedOperators = async (
   address: HexString
 ): Promise<HexString | undefined> => {
-  const data = await fetchData(`/info/registration/${address}`);
+  const data = await fetchData(`/info/registration_info/${address}`);
   return data?.operators;
 };
 
@@ -85,7 +85,7 @@ export const getOperatorsFromAddress = async (
 };
 
 const getUndeployedMetadata = async (address: HexString): Promise<string | undefined> => {
-  const data = await fetchData(`/info/registration/${address}`);
+  const data = await fetchData(`/info/registration_info/${address}`);
   return data?.metadata;
 };
 
