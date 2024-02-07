@@ -2,13 +2,13 @@ import { Timestamp } from "firebase-admin/firestore";
 import { Passkey, coll, firestore } from "./utils";
 import { ServerError, epoch } from "../utils";
 import * as functions from "firebase-functions";
+import { UserProfile } from "./user";
 
 const secrets = functions.config().doppler || {};
 
 export interface Auth {
   passkey: Passkey;
-  pin: string;
-  challenge: string | null;
+  nonce: number | null;
   updatedAt: Timestamp;
 }
 
@@ -52,7 +52,7 @@ export async function registerUser(
     passkey: Passkey;
     factory: string;
     operator: string;
-    metadata: string;
+    profile: UserProfile;
     pin: string;
     invitationCode: string;
   }

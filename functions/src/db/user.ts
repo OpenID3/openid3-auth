@@ -11,6 +11,15 @@ export interface User {
   createdAt: Timestamp;
 }
 
+export interface UserProfile {
+  name?: string;
+  about?: string;
+  avatar?: string;
+  relays: string[];
+  nostrPubkey: string;
+  mizuname: string;
+}
+
 export async function getUser(address: string): Promise<User | null> {
   const result = await coll("users").doc(address).get();
   if (result && result.exists) {
@@ -25,4 +34,19 @@ export async function userExist(address: string): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+export async function getProfile(address: string): Promise<UserProfile | null> {
+  const result = await coll("profiles").doc(address).get();
+  if (result && result.exists) {
+    return result.data() as UserProfile;
+  }
+  return null;
+}
+
+export async function updateProfile(
+  address: string,
+  profile: UserProfile
+): Promise<void> {
+  await coll("profiles").doc(address).update(address, profile);
 }
