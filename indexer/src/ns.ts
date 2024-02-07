@@ -11,6 +11,8 @@ export const METADATA_TOPIC_HASH =
   indexerIface.getEvent("NewMetadata")!.topicHash;
 export const PASSKEY_TOPIC_HASH = adminIface.getEvent("PasskeySet")!.topicHash;
 
+const SERVICE_URL = process.env.MIZU_BACKEND_SERVICE;
+
 function formatHex(hex: string): HexString {
   if (hex.startsWith("0x")) {
     return hex as HexString;
@@ -19,16 +21,8 @@ function formatHex(hex: string): HexString {
   }
 }
 
-const buildUrl = (dev: boolean, path: string) => {
-  if (dev) {
-    return `https://mizu-dev-api.misfit.id/${path}`;
-  } else {
-    return `https://mizu-dev-api.misfit.id/${path}`;
-  }
-};
-
 const fetchData = async (path: string) => {
-  const url = buildUrl(process.env.ENV === "dev", path);
+  const url = `${SERVICE_URL}${path}`
   const resp = await fetch(url);
   if (resp.status === 200) {
     return resp.json();
