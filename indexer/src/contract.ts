@@ -4,7 +4,6 @@ import { passkeyAdminAbi } from "./abi/passkeyAdminAbi";
 import { openid3AccountAbi } from "./abi/openid3AccountAbi";
 import { accountFactoryAbi } from "./abi/accountFactoryAbi";
 
-
 export const indexer = process.env.CONTRACT_V0_0_9_ACCOUNT_EVENT_INDEXER!;
 export const indexerIface = new ethers.Interface(accountEventIndexerAbi);
 

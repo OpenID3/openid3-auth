@@ -19,37 +19,25 @@ function formatHex(hex: string): HexString {
   }
 }
 
-const buildUrl = (dev: boolean) => {
+const buildUrl = (dev: boolean, path: string) => {
   if (dev) {
-    return `http://127.0.0.1:5002/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+    return `https://mizu-dev-api.misfit.id/${path}`;
   } else {
-    return `https://firestore.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/databases/(default)/documents/`;
+    return `https://mizu-dev-api.misfit.id/${path}`;
   }
 };
 
-const getDataFromFirestore = async (collection: string, doc: string) => {
-  const urlPrefix = buildUrl(process.env.ENV === "dev");
-  collection = collection + "_" + process.env.ENV;
-  const resp = await fetch(`${urlPrefix}${collection}/${doc}`);
-  if (resp.status === 404) {
-    return undefined;
-  }
+const fetchData = async (path: string) => {
+  const url = buildUrl(process.env.ENV === "dev", path);
+  const resp = await fetch(url);
   if (resp.status === 200) {
-    return await resp.json();
+    return resp.json();
   }
-  throw new Error("Failed to fetch data from firestore");
+  throw new Error("failed to fetch data from " + url);
 };
 
 const resolveName = async (name: string) => {
-  const uid = ethers.namehash(name);
-  const result = await getDataFromFirestore("mns", uid);
-  if (result) {
-    return ethers.getAddress(
-      formatHex(result.fields.address.stringValue)
-    ) as HexString;
-  } else {
-    throw new HexlinkError(404, "name not registered");
-  }
+  return fetchData(`/info/name_to_address/${name}`);
 };
 
 export interface NostrInfo {
@@ -61,24 +49,20 @@ export const getNostrInfoFromName = async (
   name: string
 ): Promise<NostrInfo | undefined> => {
   const address = await resolveName(name);
-  const data = await getDataFromFirestore("profiles", address);
-  if (data) {
+  const profile = (await fetchData(`/info/profile/${address}`)) as NostrInfo;
+  if (profile) {
     return {
-      nostrPubkey: data.fields.nostrPubkey.stringValue as string,
-      relays: data.fields.relays.arrayValue.values.map(
-        (v: { stringValue: string }) => v.stringValue
-      ),
+      nostrPubkey: profile.nostrPubkey,
+      relays: profile.relays,
     };
   }
 };
 
-const getOperators = async (
+const getUndeployedOperators = async (
   address: HexString
 ): Promise<HexString | undefined> => {
-  const data = await getDataFromFirestore("users", address);
-  if (data) {
-    return data.fields.operators.stringValue as HexString;
-  }
+  const data = await fetchData(`/info/registration/${address}`);
+  return data?.operators;
 };
 
 export const getOperatorsFromName = async (
@@ -102,15 +86,13 @@ export const getOperatorsFromAddress = async (
   if (operators) {
     return operators as HexString;
   } else {
-    return getOperators(normalized);
+    return getUndeployedOperators(normalized);
   }
 };
 
-const getMetadata = async (address: HexString): Promise<string | undefined> => {
-  const data = await getDataFromFirestore("users", address);
-  if (data) {
-    return data.fields.metadata.stringValue as string;
-  }
+const getUndeployedMetadata = async (address: HexString): Promise<string | undefined> => {
+  const data = await fetchData(`/info/registration/${address}`);
+  return data?.metadata;
 };
 
 export const getMetadataFromName = async (
@@ -132,19 +114,13 @@ export const getMetadataFromAddress = async (
   if (metadata) {
     return metadata as string;
   } else {
-    return getMetadata(normalized);
+    return getUndeployedMetadata(normalized);
   }
 };
 
-const getPasskey = async (address: HexString): Promise<Passkey | undefined> => {
-  const data = await getDataFromFirestore("users", address);
-  if (data) {
-    return {
-      x: formatHex(data.fields.passkey.mapValue.fields.x.stringValue),
-      y: formatHex(data.fields.passkey.mapValue.fields.y.stringValue),
-      id: data.fields.passkey.mapValue.fields.id.stringValue as string,
-    } as Passkey;
-  }
+const getUndeployedPasskey = async (address: HexString): Promise<Passkey | undefined> => {
+  const data = await fetchData(`/info/registration/${address}`);
+  return data?.passkey;
 };
 
 export const getPasskeyFromName = async (
@@ -171,7 +147,7 @@ export const getPasskeyFromAddress = async (
       id: passkey.id,
     } as Passkey;
   } else {
-    return getPasskey(normalized);
+    return getUndeployedPasskey(normalized);
   }
 };
 
