@@ -1,9 +1,17 @@
 import cors from "cors";
 import express, { Application } from "express";
-import { getPubkeyFromName, getPubkeyFromAddress, stripHex, getPasskeyFromAddress, getPasskeyFromName } from "./ns";
+import {
+  getOperatorsFromName,
+  getOperatorsFromAddress,
+  getMetadataFromName,
+  getMetadataFromAddress,
+  stripHex,
+  getPasskeyFromAddress,
+  getPasskeyFromName,
+  getNostrInfoFromName,
+} from "./ns";
 import { HexString, HexlinkError, Passkey } from "./types";
 import { ServerError } from "./utils";
-import { registerUserWithPasskey } from "./auth";
 
 const app: Application = express();
 const port = Number(process.env.PORT) || 8000;
@@ -16,13 +24,13 @@ app.get("/.well-known/nostr.json", cors(), async (req, res) => {
 
   const name = req.query.name;
   try {
-    const pubkey = await getPubkeyFromName(name);
-    if (pubkey) {
-      const normalized = stripHex(pubkey);
+    const nostr = await getNostrInfoFromName(name);
+    if (nostr) {
+      const normalized = stripHex(nostr.nostrPubkey);
       return res.status(200).json({
         names: { [name]: normalized },
         relays: {
-          [normalized]: [process.env.DEFAULT_RELAY],
+          [normalized]: nostr.relays,
         },
       });
     } else {
@@ -33,19 +41,18 @@ app.get("/.well-known/nostr.json", cors(), async (req, res) => {
   }
 });
 
-app.get("/api/account/nostrkey", cors(), async (req, res) => {
+app.get("/api/account/metadata", cors(), async (req, res) => {
   try {
-    let pubkey: HexString | undefined;
+    let metadata: string | undefined;
     if (req.query.name) {
-      pubkey = await getPubkeyFromName(req.query.name as string);
+      metadata = await getMetadataFromName(req.query.name as string);
     } else if (req.query.address) {
-      pubkey = await getPubkeyFromAddress(req.query.address as string);
+      metadata = await getMetadataFromAddress(req.query.address as string);
     } else {
       throw new HexlinkError(400, "name or address is required");
     }
-    if (pubkey) {
-      const normalized = stripHex(pubkey);
-      return res.status(200).json({ pubkey: normalized });
+    if (metadata) {
+      return res.status(200).json({ metadata });
     } else {
       return res.status(404).send("Not found");
     }
@@ -66,6 +73,26 @@ app.get("/api/account/passkey", cors(), async (req, res) => {
     }
     if (passkey) {
       return res.status(200).json({ passkey });
+    } else {
+      return res.status(404).send("Not found");
+    }
+  } catch (err: unknown) {
+    handleError(res, err);
+  }
+});
+
+app.get("/api/account/operators", cors(), async (req, res) => {
+  try {
+    let operators: HexString | undefined;
+    if (req.query.name) {
+      operators = await getOperatorsFromName(req.query.name as string);
+    } else if (req.query.address) {
+      operators = await getOperatorsFromAddress(req.query.address as HexString);
+    } else {
+      throw new HexlinkError(400, "name or address is required");
+    }
+    if (operators) {
+      return res.status(200).json({ operators });
     } else {
       return res.status(404).send("Not found");
     }

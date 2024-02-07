@@ -1,23 +1,19 @@
 import { ethers } from "ethers";
-import {
-  AccountManager__factory,
-  PasskeyAdmin__factory,
-} from "@openid3/contracts";
 import { RedisService } from "./redis";
 import { LogResponse, Passkey } from "./types";
-import { METADATA_TOPIC_HASH, PASSKEY_TOPIC_HASH, genKey } from "./ns";
+import {
+  METADATA_TOPIC_HASH,
+  PASSKEY_TOPIC_HASH,
+  NEW_OPERATORS_TOPIC_HASH,
+  genKey,
+} from "./ns";
+import { admin, indexer, indexerIface, adminIface } from "./contract";
 
 const SEPOLIA = {
   name: "sepolia",
   chainId: 11155111,
 };
 const SCAN_SERVICE_URL = "https://api-sepolia.etherscan.io/api";
-
-const manager = process.env.CONTRACT_V0_0_8_ACCOUNT_MANAGER!;
-const managerIface = AccountManager__factory.createInterface();
-
-const admin = process.env.CONTRACT_V0_0_8_PASSKEY_ADMIN!;
-const adminIface = PasskeyAdmin__factory.createInterface();
 
 const provider = new ethers.InfuraProvider(
   SEPOLIA.chainId,
@@ -44,7 +40,7 @@ async function indexNewMetadataEvent(
     return;
   }
   const events: Array<[string, string]> = logs.map((log) => {
-    const parsed = managerIface.parseLog(log);
+    const parsed = indexerIface.parseLog(log);
     console.log(
       "NewMetadata ======> ",
       parsed!.args.account,
@@ -61,6 +57,41 @@ async function indexNewMetadataEvent(
     const nextPage = Number(query.page) + 1;
     query.page = nextPage.toString();
     await indexNewMetadataEvent(query, redis);
+  }
+}
+
+async function indexAllNewOperatorsEvent(
+  query: Record<string, string>,
+  redis: RedisService
+) {
+  const resp = await fetch(genUrl(query));
+  const result = await resp.json();
+  if (result.status === "0" && result.message !== "No records found") {
+    throw new Error(result.result);
+  }
+  const logs = result.result as LogResponse[];
+  if (logs.length === 0) {
+    console.log("No NewOperators event found.");
+    return;
+  }
+  const events: Array<[string, string]> = logs.map((log) => {
+    const parsed = indexerIface.parseLog(log);
+    console.log(
+      "NewOperators ======> ",
+      parsed!.args.account,
+      " <-> ",
+      parsed!.args.operators
+    );
+    return [
+      genKey(parsed!.args.account, NEW_OPERATORS_TOPIC_HASH),
+      parsed!.args.operators,
+    ];
+  });
+  await redis.mset(events);
+  if (logs.length === Number(query.offset)) {
+    const nextPage = Number(query.page) + 1;
+    query.page = nextPage.toString();
+    await indexAllNewOperatorsEvent(query, redis);
   }
 }
 
@@ -133,7 +164,15 @@ const indexEvents = async () => {
     indexNewMetadataEvent(
       {
         ...queryBase,
-        address: manager,
+        address: indexer,
+        topic0: METADATA_TOPIC_HASH,
+      },
+      redis
+    ),
+    indexAllNewOperatorsEvent(
+      {
+        ...queryBase,
+        address: indexer,
         topic0: METADATA_TOPIC_HASH,
       },
       redis

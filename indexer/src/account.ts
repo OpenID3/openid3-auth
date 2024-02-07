@@ -1,11 +1,12 @@
 /* eslint-disable camelcase */
-import {
-  AccountFactory__factory,
-  OpenId3Account__factory,
-  PasskeyAdmin__factory,
-} from "@openid3/contracts";
-import { Passkey } from "./firestore";
-import { InfuraProvider, ethers } from "ethers";
+import { Contract, InfuraProvider, ethers } from "ethers";
+import {accountFactoryIface, accountIface, adminIface} from "./contract";
+
+export interface Passkey {
+  x: string; // pubKeyX
+  y: string; // pubKeyY
+  id: string;
+}
 
 function formatHex(hex: string) {
   if (hex.startsWith("0x")) {
@@ -15,7 +16,7 @@ function formatHex(hex: string) {
 }
 
 export function buildPasskeyAdminData(passkey: Passkey) {
-  const adminData = PasskeyAdmin__factory.createInterface().encodeFunctionData(
+  const adminData = adminIface.encodeFunctionData(
     "setPasskey",
     [
       {
@@ -36,7 +37,7 @@ export function buildAccountInitData(
   operator: string,
   metadata: string
 ) {
-  return OpenId3Account__factory.createInterface().encodeFunctionData(
+  return accountIface.encodeFunctionData(
     "initialize",
     [buildPasskeyAdminData(passkey), operator, formatHex(metadata)]
   );
@@ -81,6 +82,6 @@ export async function getAccountAddress(input: {
     input.metadata
   );
   const salt = ethers.keccak256(accountData);
-  const factory = AccountFactory__factory.connect(input.factory, provider);
+  const factory = new Contract(input.factory, accountFactoryIface, provider);
   return await factory.predictClonedAddress(salt);
 }

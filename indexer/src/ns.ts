@@ -1,18 +1,15 @@
 import { ethers } from "ethers";
 import { HexString, HexlinkError, Passkey } from "./types";
-import { genNameHash } from "./name";
 import { RedisService } from "./redis";
-import {
-  AccountManager__factory,
-  PasskeyAdmin__factory,
-} from "@openid3/contracts";
+import { indexerIface, adminIface } from "./contract";
 
 export const genKey = (account: string, event: string) => `${event}:${account}`;
 
+export const NEW_OPERATORS_TOPIC_HASH =
+  indexerIface.getEvent("NewOperatorsSet")!.topicHash;
 export const METADATA_TOPIC_HASH =
-  AccountManager__factory.createInterface().getEvent("NewMetadata").topicHash;
-export const PASSKEY_TOPIC_HASH =
-  PasskeyAdmin__factory.createInterface().getEvent("PasskeySet").topicHash;
+  indexerIface.getEvent("NewMetadata")!.topicHash;
+export const PASSKEY_TOPIC_HASH = adminIface.getEvent("PasskeySet")!.topicHash;
 
 function formatHex(hex: string): HexString {
   if (hex.startsWith("0x")) {
@@ -43,27 +40,103 @@ const getDataFromFirestore = async (collection: string, doc: string) => {
   throw new Error("Failed to fetch data from firestore");
 };
 
-const resolveUid = async (uid: string) => {
+const resolveName = async (name: string) => {
+  const uid = ethers.namehash(name);
   const result = await getDataFromFirestore("mns", uid);
   if (result) {
     return ethers.getAddress(
       formatHex(result.fields.address.stringValue)
     ) as HexString;
+  } else {
+    throw new HexlinkError(404, "name not registered");
   }
 };
 
-const getMetadata = async (
+export interface NostrInfo {
+  nostrPubkey: string;
+  relays: string[];
+}
+
+export const getNostrInfoFromName = async (
+  name: string
+): Promise<NostrInfo | undefined> => {
+  const address = await resolveName(name);
+  const data = await getDataFromFirestore("profiles", address);
+  if (data) {
+    return {
+      nostrPubkey: data.fields.nostrPubkey.stringValue as string,
+      relays: data.fields.relays.arrayValue.values.map(
+        (v: { stringValue: string }) => v.stringValue
+      ),
+    };
+  }
+};
+
+const getOperators = async (
   address: HexString
 ): Promise<HexString | undefined> => {
   const data = await getDataFromFirestore("users", address);
   if (data) {
-    return formatHex(data.fields.metadata.stringValue);
+    return data.fields.operators.stringValue as HexString;
   }
 };
 
-const getPasskey = async (
+export const getOperatorsFromName = async (
+  name: string
+): Promise<HexString | undefined> => {
+  const address = await resolveName(name);
+  return getOperatorsFromAddress(address);
+};
+
+export const getOperatorsFromAddress = async (
   address: HexString
-): Promise<Passkey | undefined> => {
+): Promise<HexString | undefined> => {
+  if (!ethers.isAddress(address)) {
+    throw new HexlinkError(400, "invalid address");
+  }
+  const normalized = ethers.getAddress(address) as HexString;
+  const redis = await RedisService.getInstance();
+  const operators = await redis.get(
+    genKey(normalized, NEW_OPERATORS_TOPIC_HASH)
+  );
+  if (operators) {
+    return operators as HexString;
+  } else {
+    return getOperators(normalized);
+  }
+};
+
+const getMetadata = async (address: HexString): Promise<string | undefined> => {
+  const data = await getDataFromFirestore("users", address);
+  if (data) {
+    return data.fields.metadata.stringValue as string;
+  }
+};
+
+export const getMetadataFromName = async (
+  name: string
+): Promise<string | undefined> => {
+  const address = await resolveName(name);
+  return getMetadataFromAddress(address);
+};
+
+export const getMetadataFromAddress = async (
+  address: string
+): Promise<string | undefined> => {
+  if (!ethers.isAddress(address)) {
+    throw new HexlinkError(400, "invalid address");
+  }
+  const normalized = ethers.getAddress(address) as HexString;
+  const redis = await RedisService.getInstance();
+  const metadata = await redis.get(genKey(normalized, METADATA_TOPIC_HASH));
+  if (metadata) {
+    return metadata as string;
+  } else {
+    return getMetadata(normalized);
+  }
+};
+
+const getPasskey = async (address: HexString): Promise<Passkey | undefined> => {
   const data = await getDataFromFirestore("users", address);
   if (data) {
     return {
@@ -74,41 +147,10 @@ const getPasskey = async (
   }
 };
 
-export const getPubkeyFromName = async (
-  name: string
-): Promise<HexString | undefined> => {
-  const uid = genNameHash(name);
-  const address = await resolveUid(uid);
-  if (!address) {
-    throw new HexlinkError(404, "name not registered");
-  }
-  return getPubkeyFromAddress(address);
-};
-
-export const getPubkeyFromAddress = async (
-  address: string
-): Promise<HexString | undefined> => {
-  if (!ethers.isAddress(address)) {
-    throw new HexlinkError(400, "invalid address");
-  }
-  const normalized = ethers.getAddress(address) as HexString;
-  const redis = await RedisService.getInstance();
-  const pubkey = await redis.get(genKey(normalized, METADATA_TOPIC_HASH));
-  if (pubkey) {
-    return pubkey as HexString;
-  } else {
-    return getMetadata(normalized);
-  }
-};
-
 export const getPasskeyFromName = async (
   name: string
 ): Promise<Passkey | undefined> => {
-  const uid = genNameHash(name);
-  const address = await resolveUid(uid);
-  if (!address) {
-    throw new HexlinkError(404, "name not registered");
-  }
+  const address = await resolveName(name);
   return getPasskeyFromAddress(address);
 };
 
