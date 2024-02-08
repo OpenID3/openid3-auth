@@ -6,7 +6,7 @@ import { indexerIface, adminIface } from "./contract";
 export const genKey = (account: string, event: string) => `${event}:${account}`;
 
 export const NEW_OPERATORS_TOPIC_HASH =
-  indexerIface.getEvent("NewOperatorsSet")!.topicHash;
+  indexerIface.getEvent("NewOperators")!.topicHash;
 export const METADATA_TOPIC_HASH =
   indexerIface.getEvent("NewMetadata")!.topicHash;
 export const PASSKEY_TOPIC_HASH = adminIface.getEvent("PasskeySet")!.topicHash;
@@ -22,16 +22,20 @@ function formatHex(hex: string): HexString {
 }
 
 const fetchData = async (path: string) => {
-  const url = `${SERVICE_URL}${path}`
-  const resp = await fetch(url);
-  if (resp.status === 200) {
-    return resp.json();
+  const resp = await fetch(`${SERVICE_URL}${path}`);
+  const result = await resp.json();
+  if (result.status === 200) {
+    return JSON.parse(result.data());
   }
-  throw new Error("failed to fetch data from " + url);
+  if (result.status === 404) {
+    return undefined;
+  }
+  throw new Error("Failed to fetch data");
 };
 
 const resolveName = async (name: string) => {
-  return fetchData(`/info/name_to_address/${name}`);
+  const data = await fetchData(`/info/name_to_address/${name}`);
+  return data?.address;
 };
 
 export interface NostrInfo {
@@ -43,10 +47,10 @@ export const getNostrInfoFromName = async (
   name: string
 ): Promise<NostrInfo | undefined> => {
   const address = await resolveName(name);
-  const profile = (await fetchData(`/info/profile/${address}`)) as NostrInfo;
+  const profile = (await fetchData(`/info/profile/${address}`));
   if (profile) {
     return {
-      nostrPubkey: profile.nostrPubkey,
+      nostrPubkey: profile.nostr_pubkey,
       relays: profile.relays,
     };
   }

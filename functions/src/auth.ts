@@ -12,12 +12,11 @@ import {
   signAsymmetricRsa,
 } from "./gcloudKms";
 import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
-import { registerUser, getAuth, postAuth } from "./db/user";
+import { registerUser, incNonce, getUser } from "./db/user";
 import { genRegistrationInfo, getAccountAddress } from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
 import base64url from "base64url";
-import { Server } from "http";
 
 const secrets = functions.config().doppler || {};
 const SESSION_TTL = 3600 * 24;
@@ -111,7 +110,7 @@ export const signAndRotateKek = functions.https.onRequest((req, res) => {
     req,
     res,
     async () => {
-      let address;
+      let address: string;
       try {
         if (req.body.message && !req.body.auth) {
           throw new ServerError(400, "auth required");
@@ -119,8 +118,8 @@ export const signAndRotateKek = functions.https.onRequest((req, res) => {
 
         if (req.body.auth) {
           address = ethers.getAddress(req.body.auth.address);
-          const auth = await getAuth(address);
-          if (!auth) {
+          const user = await getUser(address);
+          if (!user) {
             throw new ServerError(404, "User not found");
           }
           const challenge = crypto
@@ -129,7 +128,7 @@ export const signAndRotateKek = functions.https.onRequest((req, res) => {
               Buffer.concat([
                 Buffer.from("login", "utf-8"), // action
                 toBuffer(address), // address
-                toBuffer(ethers.solidityPacked(["bytes32"], [auth.nonce])), // challenge
+                toBuffer(ethers.solidityPacked(["bytes32"], [user.nonce])), // challenge
                 Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
                 toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
               ])
@@ -143,20 +142,27 @@ export const signAndRotateKek = functions.https.onRequest((req, res) => {
             ],
             req.body.authData,
             req.body.signature,
-            auth.passkey
+            user.passkey
           );
+          const [, token] = await Promise.all([
+            incNonce(address, user.nonce),
+            signJwt(address, SESSION_TTL),
+          ]);
+          const aad = toBuffer(address);
+          const [dek, encNewDek] = await Promise.all([
+            decryptWithSymmKey(req.body.encDek, aad),
+            encryptWithSymmKey(req.body.newDek, aad),
+          ]);
+          res.status(200).json({ token, dek, encNewDek });
         } else {
           address = await verifyIdToken(req.body.auth);
+          const aad = toBuffer(address);
+          const [dek, encNewDek] = await Promise.all([
+            decryptWithSymmKey(req.body.encDek, aad),
+            encryptWithSymmKey(req.body.newDek, aad),
+          ]);
+          res.status(200).json({ dek, encNewDek });
         }
-
-        const aad = toBuffer(address);
-        const [, dek, encNewDek, token] = await Promise.all([
-          postAuth(address),
-          decryptWithSymmKey(req.body.encDek, aad),
-          encryptWithSymmKey(req.body.newDek, aad),
-          signJwt(address, SESSION_TTL),
-        ]);
-        res.status(200).json({ token, dek, encNewDek });
       } catch (err: unknown) {
         handleError(res, err);
       }
@@ -173,7 +179,7 @@ export const signAndRotateKek = functions.https.onRequest((req, res) => {
  *   challenge: string, // hex
  * }
  */
-export const getNonce = functions.https.onRequest((req, res) => {
+export const getAuthNonce = functions.https.onRequest((req, res) => {
   cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
     req,
     res,
@@ -186,11 +192,11 @@ export const getNonce = functions.https.onRequest((req, res) => {
           throw new ServerError(429, "Too many requests");
         }
         const address = ethers.getAddress(req.body.address);
-        const auth = await getAuth(address);
-        if (auth == null) {
+        const nonce = await getNonce(address);
+        if (nonce == null) {
           throw new ServerError(404, "User not found");
         }
-        res.status(200).json({ nonce: auth.nonce });
+        res.status(200).json({ nonce });
       } catch (err: unknown) {
         handleError(res, err);
       }

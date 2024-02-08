@@ -1,8 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { Passkey, coll, firestore } from "./utils";
 import * as functions from "firebase-functions";
-import { ServerError, epoch } from "../utils";
-
+import { ServerError } from "../utils";
 
 const secrets = functions.config().doppler || {};
 
@@ -10,7 +9,6 @@ export interface User {
   passkey: Passkey;
   nonce: number;
   registrationInfo: RegistrationInfo;
-  profile: UserProfile;
   createdAt: Timestamp;
 }
 
@@ -52,8 +50,8 @@ export async function userExist(address: string): Promise<boolean> {
   return false;
 }
 
-export async function getProfile(address: string): Promise<UserProfile | null> {
-  const result = await coll("users").doc(address).get();
+export async function getProfile(uid: string): Promise<UserProfile | null> {
+  const result = await coll("profiles").doc(uid).get();
   if (result && result.exists) {
     return result.data() as UserProfile;
   }
@@ -61,33 +59,24 @@ export async function getProfile(address: string): Promise<UserProfile | null> {
 }
 
 export async function updateProfile(
-  address: string,
+  uid: string,
   profile: UserProfile
 ): Promise<void> {
-  await coll("users").doc(address).update(address, { profile });
+  await coll("users").doc(uid).update({ profile });
 }
 
-export async function getAuth(address: string): Promise<Auth | null> {
-  const result = await coll("auth").doc(address).get();
+export async function getUser(address: string): Promise<User | null> {
+  const result = await coll("users").doc(address).get();
   if (result && result.exists) {
-    return result.data() as Auth;
+    return result.data() as User;
   }
   return null;
 }
 
-export async function preAuth(address: string, challenge: string) {
+export async function incNonce(address: string, nonce: number) {
   await coll("auth")
     .doc(address)
-    .update({
-      challenge: challenge,
-      updatedAt: new Timestamp(epoch(), 0),
-    });
-}
-
-export async function postAuth(address: string, nonce: number) {
-  await coll("auth")
-    .doc(address)
-    .update({nonce: nonce + 1});
+    .update({ nonce: nonce + 1 });
 }
 
 export async function registerUser(
@@ -101,6 +90,7 @@ export async function registerUser(
   const db = firestore();
   const nsRef = coll("mns").doc(nameHash);
   const userRef = coll("users").doc(address);
+  const profileRef = coll("profiles").doc(registrationInfo.uid);
   const skipInvitationCheck = secrets.SKIP_INVITATION_CHECK === "true";
   const codeRef = coll("invitations").doc(invitationCode);
   await db.runTransaction(async (t) => {
@@ -123,9 +113,9 @@ export async function registerUser(
       passkey,
       nonce: 0,
       registrationInfo,
-      profile,
       createdAt: Timestamp.now(),
     });
+    t.set(profileRef, profile);
     if (!skipInvitationCheck) {
       t.update(codeRef, {
         usedBy: address,
