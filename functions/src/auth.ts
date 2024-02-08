@@ -4,36 +4,27 @@ import crypto from "crypto";
 import { secp256r1 } from "@noble/curves/p256";
 import { ethers } from "ethers";
 
-import {
-  ServerError,
-  epoch,
-  formatHex,
-  genNameHash,
-  handleError,
-  toBuffer,
-} from "./utils";
+import { ServerError, epoch, formatHex, handleError, toBuffer } from "./utils";
 import {
   decryptWithSymmKey,
   encryptWithSymmKey,
   getPublicKeyPemRsa,
   signAsymmetricRsa,
 } from "./gcloudKms";
-import {
-  getChallengeRateLimit,
-  registerRateLimit,
-} from "./ratelimiter";
+import { getChallengeRateLimit, registerRateLimit } from "./ratelimiter";
 import { registerUser, getAuth, postAuth } from "./db/user";
-import { getAccountAddress } from "./account";
+import { genRegistrationInfo, getAccountAddress } from "./account";
 import * as asn1 from "asn1.js";
 import BN from "bn.js";
 import base64url from "base64url";
+import { Server } from "http";
 
 const secrets = functions.config().doppler || {};
 const SESSION_TTL = 3600 * 24;
 
 /**
  * req.body: {
- *  username: string,
+ *  mizuname: string,
  *  factory: string,
  *  operator: string,
  *  passkey: {
@@ -69,15 +60,103 @@ export const registerUserWithPasskey = functions.https.onRequest((req, res) => {
         if (secrets.ENV !== "dev" && (await registerRateLimit(req.ip || ""))) {
           throw new ServerError(429, "Too many requests");
         }
-        const uid = crypto.randomBytes(32).toString("hex");
-        const address = await getAccountAddress(req.body);
-        const nameHash = genNameHash(req.body.username);
-        const [, encDek, token] = await Promise.all([
-          registerUser(nameHash, address, req.body),
+        const registrationInfo = genRegistrationInfo(
+          req.body.mizuname,
+          req.body.passkey,
+          req.body.factory,
+          req.body.operator
+        );
+        const namehash = ethers.namehash(req.body.mizuname);
+        const address = await getAccountAddress(registrationInfo);
+        const [, encDek] = await Promise.all([
+          registerUser(
+            address,
+            namehash,
+            req.body.passkey,
+            registrationInfo,
+            req.body.profile,
+            req.body.invitationCode
+          ),
           encryptWithSymmKey(req.body.dek, toBuffer(address)),
+        ]);
+        res.status(200).json({ address, encDek, registrationInfo });
+      } catch (err: unknown) {
+        handleError(res, err);
+      }
+    }
+  );
+});
+
+/*
+ * req.body: {
+ *   auth?: {
+ *     address: string,
+ *     clientDataJson: string,
+ *     authData: string, // hex
+ *     signature: string, // hex
+ *   },
+ *   message?: string,
+ *   encDek: string, // to decrypt
+ *   newDek: string, // to encrypt
+ * }
+ *
+ * res: {
+ *   signature?: string,
+ *   kek: string, // decrypted
+ *   encNewDek: string, // encrypted
+ * }
+ */
+export const signAndRotateKek = functions.https.onRequest((req, res) => {
+  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
+    req,
+    res,
+    async () => {
+      let address;
+      try {
+        if (req.body.message && !req.body.auth) {
+          throw new ServerError(400, "auth required");
+        }
+
+        if (req.body.auth) {
+          address = ethers.getAddress(req.body.auth.address);
+          const auth = await getAuth(address);
+          if (!auth) {
+            throw new ServerError(404, "User not found");
+          }
+          const challenge = crypto
+            .createHash("sha256")
+            .update(
+              Buffer.concat([
+                Buffer.from("login", "utf-8"), // action
+                toBuffer(address), // address
+                toBuffer(ethers.solidityPacked(["bytes32"], [auth.nonce])), // challenge
+                Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
+                toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
+              ])
+            )
+            .digest("base64");
+          validatePasskeySignature(
+            req.body.clientDataJson,
+            [
+              ["challenge", challenge],
+              ["origin", secrets.REACT_APP_ORIGIN],
+            ],
+            req.body.authData,
+            req.body.signature,
+            auth.passkey
+          );
+        } else {
+          address = await verifyIdToken(req.body.auth);
+        }
+
+        const aad = toBuffer(address);
+        const [, dek, encNewDek, token] = await Promise.all([
+          postAuth(address),
+          decryptWithSymmKey(req.body.encDek, aad),
+          encryptWithSymmKey(req.body.newDek, aad),
           signJwt(address, SESSION_TTL),
         ]);
-        res.status(200).json({ token, address, encDek });
+        res.status(200).json({ token, dek, encNewDek });
       } catch (err: unknown) {
         handleError(res, err);
       }
@@ -112,131 +191,6 @@ export const getNonce = functions.https.onRequest((req, res) => {
           throw new ServerError(404, "User not found");
         }
         res.status(200).json({ nonce: auth.nonce });
-      } catch (err: unknown) {
-        handleError(res, err);
-      }
-    }
-  );
-});
-
-/*
- * req.body: {
- *   address: string,
- *   auth?: {
- *     clientDataJson: string,
- *     authData: string, // hex
- *     signature: string, // hex
- *   },
- *   message?: string,
- *   encDek: string, // to decrypt
- *   newDek: string, // to encrypt
- * }
- *
- * res: {
- *   signature?: string,
- *   kek: string, // decrypted
- *   encNewDek: string, // encrypted
- * }
- */
-export const signAndRotateKek = functions.https.onRequest((req, res) => {
-  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
-    req,
-    res,
-    async () => {
-      try {
-        const address = ethers.getAddress(req.body.address);
-        const auth = await getAuth(address);
-        if (auth.updatedAt.seconds + 180 < epoch()) {
-          throw new ServerError(403, "invalid challenge");
-        }
-        const challenge = crypto
-          .createHash("sha256")
-          .update(
-            Buffer.concat([
-              Buffer.from("login", "utf-8"), // action
-              toBuffer(address), // address
-              toBuffer(auth.challenge), // challenge
-              Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
-              toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
-            ])
-          )
-          .digest("base64");
-        validatePasskeySignature(
-          req.body.clientDataJson,
-          [
-            ["challenge", challenge],
-            ["origin", secrets.REACT_APP_ORIGIN],
-          ],
-          req.body.authData,
-          req.body.signature,
-          auth.passkey
-        );
-        const aad = toBuffer(address);
-        const [, dek, encNewDek, token] = await Promise.all([
-          postAuth(address),
-          decryptWithSymmKey(req.body.encDek, aad),
-          encryptWithSymmKey(req.body.newDek, aad),
-          signJwt(address, SESSION_TTL),
-        ]);
-        res.status(200).json({ token, dek, encNewDek });
-      } catch (err: unknown) {
-        handleError(res, err);
-      }
-    }
-  );
-});
-
-/**
- * req.body: {
- *   clientDataJson: string,
- *   authData: string, // hex
- *   signature: string, // hex
- *   encDek: string, // to decrypt
- *   newDek?: string, // to encrypt
- * }
- *
- * res: {
- *   dek: string, // decrypted
- *   encNewDek?: string, // encrypted
- * }
- */
-export const getDeks = functions.https.onRequest((req, res) => {
-  cors({ origin: [secrets.REACT_APP_ORIGIN], credentials: true })(
-    req,
-    res,
-    async () => {
-      try {
-        const uid = await verifyIdToken(req);
-        const auth = await getAuth(uid);
-        if (!auth) {
-          throw new ServerError(404, "User not found");
-        }
-        const challenge = crypto
-          .createHash("sha256")
-          .update(
-            Buffer.concat([
-              Buffer.from("getDeks", "utf-8"), // action
-              Buffer.from(req.body.encDek ?? "", "utf-8"), // encrypted dek
-              toBuffer(req.body.newDek ?? ethers.ZeroHash), // new dek
-            ])
-          )
-          .digest("base64");
-        validatePasskeySignature(
-          req.body.clientDataJson,
-          [
-            ["challenge", challenge],
-            ["origin", secrets.REACT_APP_ORIGIN],
-          ],
-          req.body.authData,
-          req.body.signature,
-          auth.passkey
-        );
-        const aad = toBuffer(uid);
-        const [dek, encNewDek] = await Promise.all([
-          decryptWithSymmKey(req.body.encDek, aad),
-          encryptWithSymmKey(req.body.newDek, aad),
-        ]);
-        res.status(200).json({ dek, encNewDek });
       } catch (err: unknown) {
         handleError(res, err);
       }

@@ -6,7 +6,11 @@ import {
 } from "@openid3/contracts";
 import * as functions from "firebase-functions";
 import { Passkey } from "./db/utils";
-import { InfuraProvider, ethers } from "ethers";
+import { InfuraProvider, ethers, getCreate2Address } from "ethers";
+import { ACCOUNT_FACTORY_TO_IMPL } from "./constants";
+import { RegistrationInfo } from "./db/user";
+import { getServerOperator } from "./gcloudKms";
+import crypto from "crypto";
 
 const secrets = functions.config().doppler || {};
 
@@ -45,6 +49,54 @@ export function buildAccountInitData(
   );
 }
 
+// we have unified address across all chains so it doesn't
+// matter which chain id we use
+export const getProvider = (chainId = 11155111) => {
+  return new InfuraProvider(chainId, secrets.INFURA_API_KEY);
+};
+
+export async function getAccountAddress(input: {
+  factory: string;
+  passkey: Passkey;
+  operators: string;
+  metadata: string;
+}): Promise<string> {
+  const provider = getProvider();
+  const accountData = buildAccountInitData(
+    input.passkey,
+    input.operators,
+    input.metadata
+  );
+  const salt = ethers.keccak256(accountData);
+  const factory = AccountFactory__factory.connect(input.factory, provider);
+  return await factory.predictClonedAddress(salt);
+}
+
+export function getContractAddress(registrationInfo: RegistrationInfo) {
+  const initData = buildAccountInitData(
+    registrationInfo.passkey,
+    registrationInfo.operators,
+    registrationInfo.metadata
+  );
+  const salt = ethers.keccak256(initData);
+  const impl = ACCOUNT_FACTORY_TO_IMPL[registrationInfo.factory];
+  return predictDeterministicAddress(impl, registrationInfo.factory, salt);
+}
+
+export function predictDeterministicAddress(
+  impl: string,
+  deployer: string,
+  salt: string
+) {
+  return getCreate2Address(
+    deployer,
+    salt,
+    `0x3d602d80600a3d3981f3363d3d373d3d3d363d73${impl
+      .toLowerCase()
+      .slice(2)}5af43d82803e903d91602b57fd5bf3ff`
+  );
+}
+
 export function predictDeterministicAddressOffline(
   impl: string,
   deployer: string,
@@ -64,26 +116,24 @@ export function predictDeterministicAddressOffline(
   );
 }
 
-// we have unified address across all chains so it doesn't
-// matter which chain id we use
-export const getProvider = (chainId = 11155111) => {
-  return new InfuraProvider(chainId, secrets.INFURA_API_KEY);
-};
-
-export async function getAccountAddress(input: {
-  address: string;
-  factory: string;
-  passkey: Passkey;
-  operator: string;
-  metadata: string;
-}): Promise<string> {
-  const provider = getProvider();
-  const accountData = buildAccountInitData(
-    input.passkey,
-    input.operator,
-    input.metadata
+export const genRegistrationInfo = (
+  mizuname: string,
+  passkey: Passkey,
+  factory: string,
+  operator: string
+) => {
+  const uid = crypto.randomBytes(32).toString("hex");
+  const metadata = `${secrets.MIZU_FIREBASE_SERVICE}/getProfile/${uid}`;
+  const operators = ethers.solidityPacked(
+    ["address", "address"],
+    [operator, getServerOperator()]
   );
-  const salt = ethers.keccak256(accountData);
-  const factory = AccountFactory__factory.connect(input.factory, provider);
-  return await factory.predictClonedAddress(salt);
-}
+  return {
+    mizuname,
+    passkey,
+    factory,
+    operators,
+    metadata,
+    uid,
+  };
+};

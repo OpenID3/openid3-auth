@@ -3,19 +3,15 @@ import { Passkey, coll, firestore } from "./utils";
 import * as functions from "firebase-functions";
 import { ServerError, epoch } from "../utils";
 
+
 const secrets = functions.config().doppler || {};
 
 export interface User {
-  uid: string;
+  passkey: Passkey;
+  nonce: number;
   registrationInfo: RegistrationInfo;
   profile: UserProfile;
-  auth: Auth;
   createdAt: Timestamp;
-}
-
-export interface Auth {
-  passkey: Passkey;
-  nonce: number | null;
 }
 
 // use address as key for user
@@ -88,41 +84,25 @@ export async function preAuth(address: string, challenge: string) {
     });
 }
 
-export async function postAuth(address: string) {
+export async function postAuth(address: string, nonce: number) {
   await coll("auth")
     .doc(address)
-    .update({
-      challenge: null,
-      updatedAt: new Timestamp(epoch(), 0),
-    });
+    .update({nonce: nonce + 1});
 }
 
 export async function registerUser(
-  uid: string,
   address: string,
-  request: {
-    mizuname: string;
-    passkey: Passkey;
-    factory: string;
-    operator: string;
-    profile: UserProfile;
-    pin: string;
-    invitationCode: string;
-  }
+  nameHash: string,
+  passkey: Passkey,
+  registrationInfo: RegistrationInfo,
+  profile: UserProfile,
+  invitationCode: string,
 ) {
   const db = firestore();
-  const registrationInfo = {
-    mizuname,
-    passkey,
-    factory,
-    operator,
-    metadata,
-  };
-  const nsRef = coll("mns").doc(uid);
+  const nsRef = coll("mns").doc(nameHash);
   const userRef = coll("users").doc(address);
-  const authRef = coll("auth").doc(address);
   const skipInvitationCheck = secrets.SKIP_INVITATION_CHECK === "true";
-  const codeRef = coll("invitations").doc(request.invitationCode);
+  const codeRef = coll("invitations").doc(invitationCode);
   await db.runTransaction(async (t) => {
     const user = await t.get(nsRef);
     if (user && user.exists) {
@@ -140,17 +120,11 @@ export async function registerUser(
     }
     t.set(nsRef, { address });
     t.set(userRef, {
-      passkey: request.passkey,
-      factory: request.factory,
-      operator: request.operator,
-      metadata: request.metadata,
-      username: request.username,
+      passkey,
+      nonce: 0,
+      registrationInfo,
+      profile,
       createdAt: Timestamp.now(),
-    });
-    t.set(authRef, {
-      passkey: request.passkey,
-      pin: "",
-      updatedAt: Timestamp.now(),
     });
     if (!skipInvitationCheck) {
       t.update(codeRef, {

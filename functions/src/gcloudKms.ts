@@ -8,6 +8,10 @@ const secrets = functions.config().doppler;
 const client = new kms.KeyManagementServiceClient();
 const DEV_ENC_ALGORITHM = "aes-256-gcm";
 
+export function getServerOperator() {
+  return secrets.SERVER_OPERATOR;
+}
+
 const encryptorConfig = () => ({
   projectId: secrets.FIREBASE_PROJECT_ID,
   locationId: secrets.GCP_KEY_LOCATION_GLOBAL,

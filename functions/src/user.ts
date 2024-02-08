@@ -4,7 +4,6 @@ import * as functions from "firebase-functions";
 import { ServerError, handleError } from "./utils";
 import { checkNameRateLimit } from "./ratelimiter";
 import { resolveName } from "./db/ns";
-import { getUser } from "./db/user";
 
 const secrets = functions.config().doppler || {};
 

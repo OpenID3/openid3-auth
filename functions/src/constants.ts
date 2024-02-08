@@ -1,0 +1,3 @@
+export const ACCOUNT_FACTORY_TO_IMPL: {[key: string]: string} = {
+  "0x1C5b3f5b5b69596CCB0B6D7A95a797BE67Ec8242": "0x89DcAeDEbcc1794BcF0fd5806eC8Aa0b13CD442e", // v0.0.9
+};
