@@ -83,7 +83,7 @@ app.get("/api/account/passkey", cors(), async (req, res) => {
 
 app.get("/api/account/operators", cors(), async (req, res) => {
   try {
-    let operators: HexString | undefined;
+    let operators: HexString[] | undefined;
     if (req.query.name) {
       operators = await getOperatorsFromName(req.query.name as string);
     } else if (req.query.address) {

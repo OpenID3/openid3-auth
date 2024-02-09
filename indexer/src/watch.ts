@@ -115,7 +115,7 @@ async function indexAllPasskeySetEvent(
       x: parsed?.args.pubKey.pubKeyX.toString(16),
       y: parsed?.args.pubKey.pubKeyY.toString(16),
       id: parsed?.args.passkeyId,
-    } as Passkey;
+    };
     console.log(
       "PasskeySet ======> ",
       parsed!.args.account,
@@ -173,7 +173,7 @@ const indexEvents = async () => {
       {
         ...queryBase,
         address: indexer,
-        topic0: METADATA_TOPIC_HASH,
+        topic0: NEW_OPERATORS_TOPIC_HASH,
       },
       redis
     ),

@@ -24,6 +24,8 @@ export class HexlinkError extends Error {
 
 export interface Passkey {
   id: string;
-  x: HexString;
-  y: HexString;
+  pub_key: {
+    x: Uint8Array;
+    y: Uint8Array;
+  }
 }

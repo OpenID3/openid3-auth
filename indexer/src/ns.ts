@@ -13,19 +13,11 @@ export const PASSKEY_TOPIC_HASH = adminIface.getEvent("PasskeySet")!.topicHash;
 
 const SERVICE_URL = process.env.MIZU_BACKEND_SERVICE;
 
-function formatHex(hex: string): HexString {
-  if (hex.startsWith("0x")) {
-    return hex as HexString;
-  } else {
-    return ("0x" + hex) as HexString;
-  }
-}
-
 const fetchData = async (path: string) => {
   const resp = await fetch(`${SERVICE_URL}${path}`);
   const result = await resp.json();
   if (result.status === 200) {
-    return JSON.parse(result.data());
+    return JSON.parse(result.data);
   }
   if (result.status === 404) {
     return undefined;
@@ -34,7 +26,8 @@ const fetchData = async (path: string) => {
 };
 
 const resolveName = async (name: string) => {
-  const data = await fetchData(`/info/name_to_address/${name}`);
+  const namehash = ethers.namehash(name);
+  const data = await fetchData(`/info/name_to_address/${namehash.slice(2)}`);
   return data?.address;
 };
 
@@ -47,32 +40,32 @@ export const getNostrInfoFromName = async (
   name: string
 ): Promise<NostrInfo | undefined> => {
   const address = await resolveName(name);
-  const profile = (await fetchData(`/info/profile/${address}`));
-  if (profile) {
+  const account = (await fetchData(`/info/account/${address}`));
+  if (account?.profile) {
     return {
-      nostrPubkey: profile.nostr_pubkey,
-      relays: profile.relays,
+      nostrPubkey: Buffer.from(account.profile.nostr_pubkey).toString("hex"),
+      relays: account.profile.relays ?? [],
     };
   }
 };
 
 const getUndeployedOperators = async (
   address: HexString
-): Promise<HexString | undefined> => {
+): Promise<HexString[] | undefined> => {
   const data = await fetchData(`/info/registration_info/${address}`);
   return data?.operators;
 };
 
 export const getOperatorsFromName = async (
   name: string
-): Promise<HexString | undefined> => {
+): Promise<HexString[] | undefined> => {
   const address = await resolveName(name);
   return getOperatorsFromAddress(address);
 };
 
 export const getOperatorsFromAddress = async (
   address: HexString
-): Promise<HexString | undefined> => {
+): Promise<HexString[] | undefined> => {
   if (!ethers.isAddress(address)) {
     throw new HexlinkError(400, "invalid address");
   }
@@ -82,7 +75,9 @@ export const getOperatorsFromAddress = async (
     genKey(normalized, NEW_OPERATORS_TOPIC_HASH)
   );
   if (operators) {
-    return operators as HexString;
+    const operator1 = ethers.getAddress(operators.slice(0, 42)) as HexString;
+    const operator2 =  ethers.getAddress("0x" + operators.slice(42)) as HexString;
+    return [operator1, operator2];
   } else {
     return getUndeployedOperators(normalized);
   }
@@ -117,7 +112,7 @@ export const getMetadataFromAddress = async (
 };
 
 const getUndeployedPasskey = async (address: HexString): Promise<Passkey | undefined> => {
-  const data = await fetchData(`/info/registration/${address}`);
+  const data = await fetchData(`/info/registration_info/${address}`);
   return data?.passkey;
 };
 
@@ -138,11 +133,13 @@ export const getPasskeyFromAddress = async (
   const redis = await RedisService.getInstance();
   const passkeyStr = await redis.get(genKey(normalized, PASSKEY_TOPIC_HASH));
   if (passkeyStr) {
-    const passkey = JSON.parse(passkeyStr) as Passkey;
+    const passkey = JSON.parse(passkeyStr);
     return {
-      x: formatHex(passkey.x),
-      y: formatHex(passkey.y),
       id: passkey.id,
+      pub_key: {
+        x: Buffer.from(passkey.x, "hex"),
+        y: Buffer.from(passkey.y, "hex"),
+      }
     } as Passkey;
   } else {
     return getUndeployedPasskey(normalized);
