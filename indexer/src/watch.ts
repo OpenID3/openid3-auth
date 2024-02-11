@@ -143,7 +143,7 @@ const indexEvents = async () => {
     indexAllPasskeySetEvent(
       {
         ...queryBase,
-        address: process.env.PASSKEY_ADMIN!,
+        address: process.env.CONTRACT_V0_0_9_PASSKEY_ADMIN!,
         topic0: PASSKEY_TOPIC_HASH,
       },
       redis
@@ -151,7 +151,7 @@ const indexEvents = async () => {
     indexNewMetadataEvent(
       {
         ...queryBase,
-        address: process.env.ACCOUNT_EVENT_INDEXER!,
+        address: process.env.CONTRACT_V0_0_9_ACCOUNT_EVENT_INDEXER!,
         topic0: METADATA_TOPIC_HASH,
       },
       redis
@@ -159,7 +159,7 @@ const indexEvents = async () => {
     indexAllNewOperatorsEvent(
       {
         ...queryBase,
-        address: process.env.ACCOUNT_EVENT_INDEXER!,
+        address: process.env.CONTRACT_V0_0_9_ACCOUNT_EVENT_INDEXER!,
         topic0: NEW_OPERATORS_TOPIC_HASH,
       },
       redis
@@ -176,5 +176,7 @@ const indexEventsNoThrow = async () => {
   }
 };
 
+indexEventsNoThrow();
+
 // run every 30s
-setInterval(indexEventsNoThrow, 30000);
+// setInterval(indexEventsNoThrow, 30000);
