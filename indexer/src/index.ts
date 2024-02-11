@@ -1,56 +1,26 @@
 import cors from "cors";
 import express, { Application } from "express";
 import {
-  getOperatorsFromName,
   getOperatorsFromAddress,
-  getMetadataFromName,
   getMetadataFromAddress,
-  stripHex,
   getPasskeyFromAddress,
-  getPasskeyFromName,
-  getNostrInfoFromName,
 } from "./ns";
-import { HexString, HexlinkError, Passkey } from "./types";
-import { ServerError } from "./utils";
+import { ServerError, HexString } from "./types";
+import { ratelimit } from "./ratelimiter";
 
 const app: Application = express();
 const port = Number(process.env.PORT) || 8000;
 
-app.get("/.well-known/nostr.json", cors(), async (req, res) => {
-  if (!req.query.name || typeof req.query.name !== "string") {
-    res.status(400).json({ message: "name is required" });
-    return;
-  }
-
-  const name = req.query.name;
-  try {
-    const nostr = await getNostrInfoFromName(name);
-    if (nostr) {
-      const normalized = stripHex(nostr.nostrPubkey);
-      return res.status(200).json({
-        names: { [name]: normalized },
-        relays: {
-          [normalized]: nostr.relays,
-        },
-      });
-    } else {
-      return res.status(404).send("Not found");
-    }
-  } catch (err: unknown) {
-    handleError(res, err);
-  }
-});
+const ip = (req: express.Request) => {
+  return req.headers['x-forwarded-for'] || req.socket.remoteAddress 
+}
 
 app.get("/api/account/metadata", cors(), async (req, res) => {
   try {
-    let metadata: string | undefined;
-    if (req.query.name) {
-      metadata = await getMetadataFromName(req.query.name as string);
-    } else if (req.query.address) {
-      metadata = await getMetadataFromAddress(req.query.address as string);
-    } else {
-      throw new HexlinkError(400, "name or address is required");
+    if (await ratelimit(ip(req) as string)) {
+      throw new ServerError(429, "Rate limit exceeded");
     }
+    const metadata = await getMetadataFromAddress(req.query.address as string);
     if (metadata) {
       return res.status(200).json({ metadata });
     } else {
@@ -63,14 +33,10 @@ app.get("/api/account/metadata", cors(), async (req, res) => {
 
 app.get("/api/account/passkey", cors(), async (req, res) => {
   try {
-    let passkey: Passkey | undefined;
-    if (req.query.name) {
-      passkey = await getPasskeyFromName(req.query.name as string);
-    } else if (req.query.address) {
-      passkey = await getPasskeyFromAddress(req.query.address as string);
-    } else {
-      throw new HexlinkError(400, "name or address is required");
+    if (await ratelimit(ip(req) as string)) {
+      throw new ServerError(429, "Rate limit exceeded");
     }
+    const passkey = await getPasskeyFromAddress(req.query.address as string);
     if (passkey) {
       return res.status(200).json({ passkey });
     } else {
@@ -83,14 +49,10 @@ app.get("/api/account/passkey", cors(), async (req, res) => {
 
 app.get("/api/account/operators", cors(), async (req, res) => {
   try {
-    let operators: HexString[] | undefined;
-    if (req.query.name) {
-      operators = await getOperatorsFromName(req.query.name as string);
-    } else if (req.query.address) {
-      operators = await getOperatorsFromAddress(req.query.address as HexString);
-    } else {
-      throw new HexlinkError(400, "name or address is required");
+    if (await ratelimit(ip(req) as string)) {
+      throw new ServerError(429, "Rate limit exceeded");
     }
+    const operators = await getOperatorsFromAddress(req.query.address as HexString);
     if (operators) {
       return res.status(200).json({ operators });
     } else {

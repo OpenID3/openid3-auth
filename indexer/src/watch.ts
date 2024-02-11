@@ -1,24 +1,26 @@
-import { ethers } from "ethers";
 import { RedisService } from "./redis";
-import { LogResponse, Passkey } from "./types";
 import {
   METADATA_TOPIC_HASH,
   PASSKEY_TOPIC_HASH,
   NEW_OPERATORS_TOPIC_HASH,
   genKey,
 } from "./ns";
-import { admin, indexer, indexerIface, adminIface } from "./contract";
 
-const SEPOLIA = {
-  name: "sepolia",
-  chainId: 11155111,
-};
+import { sepolia } from "viem/chains";
+import { createPublicClient, http, parseEventLogs } from "viem";
+import { Network } from "alchemy-sdk";
+import { accountEventIndexerAbi } from "./abi/accountEventIndexerAbi";
+import { passkeyAdminAbi } from "./abi/passkeyAdminAbi";
+import { Log, RpcLog } from "viem";
+
+const provider = createPublicClient({
+  chain: sepolia,
+  transport: http(
+    `https://${Network.ETH_SEPOLIA}.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`
+  ),
+});
+
 const SCAN_SERVICE_URL = "https://api-sepolia.etherscan.io/api";
-
-const provider = new ethers.InfuraProvider(
-  SEPOLIA.chainId,
-  process.env.INFURA_API_KEY!
-);
 
 function genUrl(query: Record<string, string>) {
   const params = new URLSearchParams(query);
@@ -34,23 +36,19 @@ async function indexNewMetadataEvent(
   if (result.status === "0" && result.message !== "No records found") {
     throw new Error(result.result);
   }
-  const logs = result.result as LogResponse[];
+  const logs = result.result as Log[] | RpcLog[];
   if (logs.length === 0) {
     console.log("No NewMetadata event found.");
     return;
   }
-  const events: Array<[string, string]> = logs.map((log) => {
-    const parsed = indexerIface.parseLog(log);
-    console.log(
-      "NewMetadata ======> ",
-      parsed!.args.account,
-      " <-> ",
-      parsed!.args.metadata
-    );
-    return [
-      genKey(parsed!.args.account, METADATA_TOPIC_HASH),
-      parsed!.args.metadata,
-    ];
+  const parsed = parseEventLogs({ abi: accountEventIndexerAbi, logs });
+  const events: Array<[string, string]> = parsed.map((log) => {
+    const { account, metadata } = log!.args as {
+      account: string;
+      metadata: string;
+    };
+    console.log("NewMetadata ======> ", account, " <-> ", metadata);
+    return [genKey(account, METADATA_TOPIC_HASH), metadata];
   });
   await redis.mset(events);
   if (logs.length === Number(query.offset)) {
@@ -69,23 +67,19 @@ async function indexAllNewOperatorsEvent(
   if (result.status === "0" && result.message !== "No records found") {
     throw new Error(result.result);
   }
-  const logs = result.result as LogResponse[];
+  const logs = result.result as Log[] | RpcLog[];
   if (logs.length === 0) {
     console.log("No NewOperators event found.");
     return;
   }
-  const events: Array<[string, string]> = logs.map((log) => {
-    const parsed = indexerIface.parseLog(log);
-    console.log(
-      "NewOperators ======> ",
-      parsed!.args.account,
-      " <-> ",
-      parsed!.args.operators
-    );
-    return [
-      genKey(parsed!.args.account, NEW_OPERATORS_TOPIC_HASH),
-      parsed!.args.operators,
-    ];
+  const parsed = parseEventLogs({ abi: accountEventIndexerAbi, logs });
+  const events: Array<[string, string]> = parsed.map((log) => {
+    const { account, operators } = log!.args as {
+      account: string;
+      operators: string;
+    };
+    console.log("NewOperators ======> ", account, " <-> ", operators);
+    return [genKey(account, NEW_OPERATORS_TOPIC_HASH), operators];
   });
   await redis.mset(events);
   if (logs.length === Number(query.offset)) {
@@ -104,28 +98,21 @@ async function indexAllPasskeySetEvent(
   if (result.status === "0" && result.message !== "No records found") {
     throw new Error(result.result);
   }
-  const logs = result.result as LogResponse[];
+  const logs = result.result as Log[] | RpcLog[];
   if (logs.length === 0) {
     console.log("No PasskeySet event found.");
     return;
   }
-  const events: Array<[string, string]> = logs.map((log) => {
-    const parsed = adminIface.parseLog(log);
-    const passkey = {
-      x: parsed?.args.pubKey.pubKeyX.toString(16),
-      y: parsed?.args.pubKey.pubKeyY.toString(16),
-      id: parsed?.args.passkeyId,
-    };
-    console.log(
-      "PasskeySet ======> ",
-      parsed!.args.account,
-      " <-> ",
-      JSON.stringify(passkey)
-    );
-    return [
-      genKey(parsed!.args.account, PASSKEY_TOPIC_HASH),
-      JSON.stringify(passkey),
-    ];
+  const parsed = parseEventLogs({ abi: passkeyAdminAbi, logs });
+  const events: Array<[string, string]> = parsed.map((log) => {
+    const passkey = JSON.stringify({
+      x: log.args.pubKey.pubKeyX.toString(16),
+      y: log.args.pubKey.pubKeyY.toString(16),
+      id: log.args.passkeyId,
+    });
+    const account = log.args.account;
+    console.log("PasskeySet ======> ", account, " <-> ", passkey);
+    return [genKey(account, PASSKEY_TOPIC_HASH), passkey];
   });
   await redis.mset(events);
   if (logs.length === Number(query.offset)) {
@@ -156,7 +143,7 @@ const indexEvents = async () => {
     indexAllPasskeySetEvent(
       {
         ...queryBase,
-        address: admin,
+        address: process.env.PASSKEY_ADMIN!,
         topic0: PASSKEY_TOPIC_HASH,
       },
       redis
@@ -164,7 +151,7 @@ const indexEvents = async () => {
     indexNewMetadataEvent(
       {
         ...queryBase,
-        address: indexer,
+        address: process.env.ACCOUNT_EVENT_INDEXER!,
         topic0: METADATA_TOPIC_HASH,
       },
       redis
@@ -172,7 +159,7 @@ const indexEvents = async () => {
     indexAllNewOperatorsEvent(
       {
         ...queryBase,
-        address: indexer,
+        address: process.env.ACCOUNT_EVENT_INDEXER!,
         topic0: NEW_OPERATORS_TOPIC_HASH,
       },
       redis

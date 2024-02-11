@@ -1,40 +1,26 @@
-import * as admin from "firebase-admin";
+import { RedisService } from "./redis";
 
-const txServiceRateDBRef = "functions/rates/";
 const timestampKey = "timestamp";
 
-export async function registerRateLimit(ip: string) {
-  return await rateLimiter("sign_up", `ip_${ip}`, 60, 10);
+export async function ratelimit(ip: string) {
+  return await rateLimiter(`ratelimit:ip:${ip}`, 60, 30);
 }
 
-export async function checkNameRateLimit(ip: string) {
-  return await rateLimiter("check_name", `ip_${ip}`, 60, 30);
-}
-
-export async function getChallengeRateLimit(ip: string) {
-  return await rateLimiter("get_challenge", `ip_${ip}`, 60, 30);
-}
-
-export const rateLimiter = async (
-  callName: string,
-  rawId: string,
+const rateLimiter = async (
+  id: string,
   windowInSec: number,
   threshold: number
 ): Promise<boolean> => {
-  const callRef = txServiceRateDBRef + callName;
-  const ref = admin.database().ref(callRef);
-  const id = rawId.replace(/\/|\.|#|$/g, ":");
-
   const now = Date.now();
-  const snapshot = await ref.child(`${id}`).get();
-  if (snapshot.exists()) {
-    const snapVal: string = snapshot.val();
+  const redis = await RedisService.getInstance();
+  const snapshot = await redis.get(id);
+  if (snapshot) {
     const tsMap: Map<string, number[]> = new Map(
-      Object.entries(JSON.parse(snapVal))
+      Object.entries(JSON.parse(snapshot))
     );
 
     if (!tsMap.has(timestampKey)) {
-      addRecord(id, [now], ref);
+      addRecord(redis, id, [now]);
       return false;
     }
 
@@ -42,23 +28,23 @@ export const rateLimiter = async (
     const tsThre = now - 1000 * windowInSec;
     const tsInWindow = tsList.filter((ts) => ts > tsThre);
     tsInWindow.push(now);
-    addRecord(id, tsInWindow, ref);
+    addRecord(redis, id, tsInWindow);
 
     return tsInWindow.length > threshold;
   } else {
-    addRecord(id, [now], ref);
+    addRecord(redis, id, [now]);
     return false;
   }
 };
 
-const addRecord = (
+const addRecord = async (
+  redis: RedisService,
   id: string,
   timestampList: number[],
-  ref: admin.database.Reference
 ) => {
   const timestampMap = new Map<string, number[]>([
     [timestampKey, timestampList],
   ]);
   const timestampObj = Object.fromEntries(timestampMap);
-  ref.update({ [`${id}`]: JSON.stringify(timestampObj) });
+  await redis.set(id, JSON.stringify(timestampObj));
 };
